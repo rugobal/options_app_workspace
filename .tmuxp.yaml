@@ -1,0 +1,25 @@
+session_name: options
+start_directory: ~/Projects/options_app
+
+windows:
+  - window_name: pi
+    focus: true
+    layout: main-vertical
+    options:
+      main-pane-width: 50%
+    panes:
+      - start_directory: "~"
+        shell_command: cd ~/Projects/options_app/; code .; pi
+        focus: true
+      - start_directory: ib_trading
+      - start_directory: options_ui
+
+  - window_name: zsh
+    layout: main-horizontal
+    options:
+      main-pane-height: 15%
+    panes:
+      - start_directory: options_ui
+      - start_directory: ib_trading
+        shell_command: conda activate py3.11;export DB_PATH=/home/rugobal/.local/share/
+        focus: true

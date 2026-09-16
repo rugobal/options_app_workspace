@@ -1,0 +1,23 @@
+# Child application repositories (managed independently)
+/ib_trading/
+/options_ui/
+
+# Local agent/runtime artifacts
+/.backups/
+/.scratch/
+/.pytest_cache/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*~
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

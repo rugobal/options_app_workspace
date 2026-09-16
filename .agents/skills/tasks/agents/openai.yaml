@@ -1,0 +1,3 @@
+interface:
+  display_name: "Tasks"
+  short_description: "Turn a feature spec into atomic implementation task files"
