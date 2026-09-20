@@ -1,0 +1,23 @@
+workspaces:
+  - name: options
+    root: ~/Projects/options_app
+    tabs:
+      - label: pi
+        panes:
+          - command: "code .; pi"
+            focus: true
+          - cwd: ib_trading
+            direction: right
+            size: 50%
+          - cwd: options_ui
+            direction: down
+            size: 50%
+            
+      - label: zsh
+        panes:
+          - cwd: options_ui
+          - cwd: ib_trading
+            command: "conda activate py3.11; export DB_PATH=/home/rugobal/.local/share/"
+            direction: down
+            size: 85%
+            focus: true

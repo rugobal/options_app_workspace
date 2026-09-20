@@ -55,6 +55,12 @@
       "skillPath": "skills/productivity/handoff/SKILL.md",
       "computedHash": "20e5f4afdef502637510bc5c64d27645d3c85c88df9cb006824bbb0980166319"
     },
+    "herdr": {
+      "source": "herdrdev/herdr",
+      "sourceType": "github",
+      "skillPath": "skills/herdr/SKILL.md",
+      "computedHash": "c741134cc22372c08da2f469d49aac9f9bbddd4f5e1da0558cf1132836fa3287"
+    },
     "implement": {
       "source": "mattpocock/skills",
       "sourceType": "github",

@@ -1,0 +1,46 @@
+# Keeps file search and the @ picker useful.
+#
+# Self-sufficient on purpose: .ignore is honored whether or not this directory
+# is a git repo, whereas .gitignore is only honored inside one. The root .git
+# may be renamed to .git.bak to work around the nested-repo picker bug
+# (anthropics/claude-code#94991), so nothing here may rely on .gitignore.
+
+# Child repos are excluded by the root .gitignore; re-include them.
+!/ib_trading/
+!/options_ui/
+
+# --- root noise (mirrors the root .gitignore) ---
+.backups/
+.scratch/
+.pytest_cache/
+.git.bak/
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+*.swp
+*~
+
+# --- ib_trading build output and runtime ---
+ib_trading/build/
+ib_trading/dist/
+ib_trading/logs/
+ib_trading/*.egg-info/
+ib_trading/*.sqlite
+ib_trading/*.db
+
+# --- options_ui build output and deps ---
+options_ui/node_modules/
+options_ui/dist/
+options_ui/build/
+options_ui/server/
+options_ui/src-tauri/target/
+options_ui/src-tauri/gen/
+options_ui/package-lock.json
+
+# --- everywhere ---
+__pycache__/
+*.py[cod]
+.idea/
+.DS_Store
