@@ -1,0 +1,3 @@
+interface:
+  display_name: "Double Code Review"
+  short_description: "Review unpushed commits twice and fix the findings"
