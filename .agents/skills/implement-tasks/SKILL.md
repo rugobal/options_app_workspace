@@ -24,7 +24,7 @@ Apply a human decision gate to missing documents, ambiguous specification names,
 - A discrepancy is small when the intended result is still clear and resolving it does not change scope, observable behavior, public contracts, architecture, data handling, acceptance criteria, or the dependency plan. Resolve it, record the interpretation in the dispatch or final report, and continue.
 - A deviation is material when more than one reasonable interpretation exists or the choice could change any of those outcomes. Pause the run before further implementation, dispatch, integration, commits, or index updates. Preserve existing work and ask the user to decide, presenting the evidence, the conflicting sources, and the concrete options with their consequences. Resume only after receiving that decision.
 
-When pausing for a human decision or asking the user any clarifying question during the implementation, write like you are talking to a human, not a technical person (don't use code language). Use business domain terms, plain language, clear and concise, and avoid unnecessary verbosity. Check if the `ask_telegram` tool is available in your environment. If it is, **ALWAYS use the `ask_telegram` tool** to prompt the user (providing clear options when applicable), so they can respond remotely via Telegram. Wait for their answer through the tool before continuing. Do not use the standard `ask_user_question` tool or terminal prompts when `ask_telegram` is available. If `ask_telegram` is not available, try the `rpiv-ask-user-question` tool, and if not available, fall back to the standard `ask_user_question` tool or terminal prompts.
+When pausing for a human decision or asking the user any clarifying question during the implementation, write like you are talking to a human, not a technical person (don't use code language). Use business domain terms (read domain.md in each repository), plain language, clear and concise, and avoid unnecessary verbosity. Check if the `ask_telegram` tool is available in your environment. If it is, **ALWAYS use the `ask_telegram` tool** to prompt the user (providing clear options when applicable), so they can respond remotely via Telegram. Wait for their answer through the tool before continuing. Do not use the standard `ask_user_question` tool or terminal prompts when `ask_telegram` is available. If `ask_telegram` is not available, try the `rpiv-ask-user-question` tool, and if not available, fall back to the standard `ask_user_question` tool or terminal prompts. This is the single rule for every user-facing prompt in this skill.
 
 If an implementation session discovers a potential deviation, it must stop at a recoverable point and report it without choosing a direction. The orchestrator applies the materiality judgment. When material, notify other active sessions to stop at recoverable points and bring the decision to the user.
 
@@ -36,7 +36,7 @@ Inspect Git status and record the integration branch and starting commit in each
 
 Use the environment's supported fresh-session mechanism. A session must have its own conversation context; another prompt in the current conversation is insufficient. Give each concurrent worker a separate checkout, normally a Git worktree, and its own branch so its uncommitted changes cannot overlap with another worker's files. Give a sequential worker the integration checkout itself: it works in the current working directory on the integration branch, with no worktree and no branch of its own. Create a worktree and branch only when two or more workers run concurrently. Use `agent/` branch names unless repository or user instructions specify otherwise.
 
-Identify one integration owner for each dispatch. For a single task, this is you. For a parallel batch, the new batch orchestrator owns worker commits and integration within its checkout; you integrate its result into the original target. Only the integration owner updates the master index. Workers return changes and validation evidence without independently changing index checkboxes.
+Identify one integration owner for each dispatch. For a single task, this is you. For a parallel batch, the new batch orchestrator owns integration within its checkout; you integrate its result into the original target. Each worker updates only its own task's row in the master index and creates its own task commit. The integration owner verifies the task commits, resolves index conflicts, and alone merges into the integration target.
 
 If the required fresh-session mechanism is unavailable, report that concrete limitation. Keep the isolation requirement intact instead of implementing the task in the current session.
 
@@ -53,32 +53,32 @@ Give every dispatch a self-contained brief containing:
 - The exact task document path, task number, index path, and source specification path and basename.
 - The assigned scope, user constraints, applicable repository instructions, and completed prerequisite context.
 - The checkout/worktree path, branch, starting commit, and integration destination for each affected repository.
-- For tasks requiring test changes, every existing applicable `testing.md` path and an explicit instruction to read it before writing tests.
+- For tasks requiring test changes, the path of the repository's `testing.md` guide (for example `docs/agents/testing.md`), plus an explicit instruction to read it before writing tests.
 - Required acceptance criteria and validation, the integration owner, and the commit-and-advance protocol below.
-- The required documentation updates before commit: the task `.md` file must be updated with an implemented status, completed checklists, and an `## Implementation Verification` section with actual evidence; and the master index (e.g. `README.md`) must be updated to mark the task completed. All of this must be included in the single task commit alongside the code.
+- The documentation the worker must include in its single task commit: the task `.md` file updated with implemented status, completed checklists, and an `## Implementation Verification` section with actual evidence, plus this task's row in the master index (`[ ]` to `[x]`), committed together with the code.
 - The human decision gate: report potential deviations before implementing through them, and leave materiality decisions to the orchestrator.
-- A request to return changed files, validation commands and results, remaining issues, and any branch or commit identifiers.
+- A request to return the task commit ID, changed files, validation commands and results, and remaining issues.
 
-A parallel orchestrator's brief must explicitly request subagents, separate worktrees and branches, serial integration of completed workers, and deletion of only the branches created for this dispatch after successful integration. It coordinates implementation; workers make the code changes, including any fixes required by integration.
+A parallel orchestrator's brief must explicitly request subagents, separate worktrees and branches, serial integration of completed workers with index-conflict resolution, and deletion of only the branches created for this dispatch after successful integration. It coordinates implementation; workers make the code changes, including any fixes required by integration.
 
 Completion criterion: every dispatched task has a unique implementation session and a traceable checkout; the concurrency and user override rules hold.
 
 ## 4. Commit and advance
 
-Wait for the implementation session to finish successfully. Check its diff, acceptance criteria, and validation evidence. Session termination alone is not success. Apply the human decision gate before requesting corrections: routine defects return to the responsible session, while material deviations pause the run for the user's decision. Keep the task pending until it passes.
+Wait for the implementation session to finish successfully. Check the returned diff, acceptance criteria, validation evidence, and task commit. Session termination alone is not success. Apply the human decision gate before requesting corrections: routine defects return to the responsible session, which amends the task commit while its branch is private; material deviations pause the run for the user's decision. Do not advance dependent work until the commit passes.
 
-After the implementation and its required checks pass, but before committing, prepare the documentation updates. You must make **exactly one commit per task** that includes the implementation, the task `.md` document update, and the index update.
+The implementation session creates the task commit only after its own required checks pass, and the integration owner verifies it before integrating.
 
-First, update the assigned task document to mark it completed and verified:
+The commit records the assigned task document as completed and verified:
 - Change its status from pending to implemented and verified, preserving the document's existing status style and adding the completion date when that style includes dates.
-- Change every completed implementation point and test or acceptance checkbox from `[ ]` to `[x]`. A required item that remains incomplete means the task is not ready to commit.
-- Add or update an exact `## Implementation Verification` section. Record the implemented behavior and principal files or symbols, the focused validation commands and their results, and any accepted limitations or follow-up owned by later tasks. Include only evidence produced during the implementation.
+- Change every completed implementation point and test or acceptance checkbox from `[ ]` to `[x]`. An unchecked required item blocks the commit; record any deliberate deferral in the verification section.
+- Add or update an `## Implementation Verification` section with this exact heading. Record the implemented behavior and principal files or symbols, the focused validation commands and their results, and any accepted limitations or follow-up owned by later tasks. Include only evidence produced during the implementation.
 
-Next, update the master index (the `README.md` file or index document that points to the task) by changing the task's **Implemented** cell from `[ ]` to `[x]`.
+The commit also updates the master index (the `README.md` file or index document that points to the task) by changing this task's **Implemented** cell from `[ ]` to `[x]`.
 
-Stage all changes together: the implementation code, the updated task document, and the updated index. When the task document and implementation live in different repositories, make the corresponding task commit in each affected repository containing the relevant updates for that repository, and record both commit IDs.
+The implementation session makes **exactly one commit per task per affected repository**, containing the implementation code, the updated task document, and the updated index. When the task document and implementation live in different repositories, make the corresponding task commit in each affected repository containing the relevant updates for that repository, and record both commit IDs.
 
-As soon as a task succeeds, its integration owner creates the single commit with this exact first line, substituting the task number and specification basename:
+The task commit's first line must be exactly this, substituting the task number and specification basename:
 
 ```text
 Implement Task {task number} of {spec_file_name}
@@ -98,6 +98,6 @@ Completion criterion: the implementation is committed and integrated, required c
 
 Continue until every selected task meets the completion criterion. If a failure leaves tasks blocked, preserve their pending status and report the exact dependency or failed check. Ready, independent tasks within the original selection may still proceed.
 
-Report completed task numbers, commit IDs, validation results. If any selected tasks are still blocked, report them. On resumption, re-read the index and Git history so an interruption between implementation commit and checkbox update does not cause duplicate implementation.
+Report completed task numbers, commit IDs, validation results, and any selected tasks still blocked. On resumption, re-read the index and Git history so an interruption between implementation and commit does not cause duplicate implementation.
 
-Notify either still blocked tasks or the completion of the implementation to the user using `ask_telegram` tool if it is available in your environment. If `ask_telegram` is not available, try the `rpiv-ask-user-question` tool, and if not available, fall back to the standard `ask_user_question` tool or terminal prompts. On your notifications of blocked tasks, write it like you are talking to a human, not a technical person (don't use code language). Use business domain terms, plain language, clear and concise, and avoid unnecessary verbosity.
+Notify the user of completion, or of any still-blocked tasks, using the user-prompting rule in section 1.
