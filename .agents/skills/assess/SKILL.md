@@ -33,19 +33,25 @@ An empty or unusable argument is the one reason to interrupt: ask for the report
 
 **Done when** symptom, expected, and trigger are each stated in a line.
 
-### 2. Locate
+### 2. Read the record
+
+Before tracing code, read the most recent application logs. The project's `AGENTS.md` names where they live and how they rotate. A recorded stack trace, timestamp, or error string often names the fault outright, and a captured failure is frequently the exact input that reproduces the bug.
+
+**Done when** you have either quoted the relevant log lines verbatim or established that no log covers the failure.
+
+### 3. Locate
 
 Recon by identifier, not by browsing. Search the error string, the names in the report, and the feature's vocabulary; read the entry points they land in. Follow the feature's own call path rather than reading the repository.
 
 **Done when** you have a ranked shortlist of candidate files.
 
-### 3. Trace to the fault
+### 4. Trace to the fault
 
 Follow the faulty value from the trigger to the wrong output, reading the bodies along that path. Read the surrounding code only as far as it bears on the value's journey.
 
 **Done when** every hop on that path carries a `path:line`, and you can name the single line where behaviour first diverges from intent. That line is the **fault**, and it anchors the hypothesis.
 
-### 4. Compress into the dossier
+### 5. Compress into the dossier
 
 Write the dossier as the block below. It is a budget, not a form: the next model pays for every line, and a dossier read by someone who has never seen this repo should let them implement the fix without opening another file.
 
@@ -96,7 +102,7 @@ Typical dossiers run 40–120 lines. Past that you are keeping context, not evid
 
 **Done when** the dossier is complete, every path in it exists, and every exhibit matches the file it came from.
 
-### 5. Hand off
+### 6. Hand off
 
 Close with this line, exactly:
 
