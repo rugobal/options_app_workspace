@@ -6,6 +6,7 @@
 /.backups/
 /.scratch/
 /.pytest_cache/
+/.pi/node_modules/
 
 # Environment and secrets
 .env

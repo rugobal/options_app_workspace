@@ -21,6 +21,8 @@ If the redacted output is not enough to diagnose the bug, say so and ask the use
 
 Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give up.**
 
+Before building anything, read the project's most recent application logs (check `AGENTS.md` / project docs for the log location and rotation scheme). The exact failure is often already recorded there, and a captured log frequently *is* the loop input.
+
 ### Ways to construct one, in roughly this order
 
 1. **Failing test** at whatever seam reaches the bug: unit, integration, e2e.
