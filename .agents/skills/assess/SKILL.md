@@ -1,6 +1,6 @@
 ---
 name: assess
-description: Read-only reconnaissance of a bug, compressed into a dossier that a stronger model can fix from.
+description: Read-only reconnaissance of a bug, compressed into a dossier that a stronger model can fix from. Suited to recon-heavy bugs in large or unfamiliar code where search can find the fault; design-level bugs need the stronger model diagnosing, not just implementing.
 argument-hint: "The bug report: symptom, expected behaviour, and any error text."
 disable-model-invocation: true
 ---
@@ -55,12 +55,42 @@ Follow the faulty value from the trigger to the wrong output, reading the bodies
 
 **Done when** every hop on that path carries a `path:line`, and you can name the single line where behaviour first diverges from intent. That line is the **fault**, and it anchors the hypothesis.
 
-### 5. Compress into the dossier
+### 5. Commit to one fault
+
+The dossier names exactly one fault. A second candidate handed on as an equal passes the diagnosis to the next model at its price, and it will chase the wrong one first.
+
+When two candidates survive step 4, **discriminate** before writing: find the evidence only one of them explains — the exact error text, the recorded state, the log line, the symptom's wording. The fault is the candidate that produces the observed symptom exactly; a candidate that explains only part of it is a contributing cause at most.
+
+- The winner goes under `Fault`, with the discriminating evidence as its confidence line.
+- A disproved candidate goes under `Ruled out`, with what disproved it.
+- A candidate you could not disprove goes under `Unknowns`, ranked below the fault, with the one check that would decide between them.
+
+If no evidence separates them, `Fault` still names the likelier one at `confidence: medium` or lower, and `Unknowns` carries the deciding check.
+
+**Done when** `Fault` names one line, and every other candidate sits in `Ruled out` or `Unknowns`.
+
+### 6. Note the fixer's conventions
+
+The next model implements the fix in this repo's style and proves it with this repo's tests. Record what you already saw that governs that work, so it does not pay to rediscover it:
+
+- the style guide and testing docs `AGENTS.md` points to, each with the one or two rules the fix will touch
+- the existing test file that covers the faulty module, if any
+- the exact command that runs those tests
+
+Pointers and rules only; the docs themselves stay out.
+
+**Done when** `Conventions` names the test command, or states that none exists.
+
+### 7. Compress into the dossier
 
 Write the dossier as the block below. It is a budget, not a form: the next model pays for every line, and a dossier read by someone who has never seen this repo should let them implement the fix without opening another file.
 
 ````text
 <!-- ASSESS-DOSSIER:BEGIN -->
+
+## Root
+<absolute directory every path below is relative to>
+- <repo dir> — branch <name> @ <short commit>, <clean | uncommitted changes>
 
 ## Symptom
 <observed, expected, trigger — one line each>
@@ -68,7 +98,7 @@ Write the dossier as the block below. It is a budget, not a form: the next model
 ## Fault
 <path:line — the line that diverges>
 <one-paragraph root cause hypothesis>
-<confidence: high | medium | low — and the single piece of evidence that carries it>
+<confidence: high | medium | low — and the discriminating evidence that carries it>
 
 ## Paths
 - `path/to/file.ext:120-148` — what this file owes the fix
@@ -91,6 +121,11 @@ Write the dossier as the block below. It is a budget, not a form: the next model
 ## Unknowns
 - <what you could not confirm from reading alone>
 
+## Conventions
+- <doc path> — <the rule from it the fix must honour>
+- tests: <existing test file for the faulty module>
+- run: <exact test command>
+
 <!-- ASSESS-DOSSIER:END -->
 ````
 
@@ -98,15 +133,17 @@ Keep the section titles and sentinels exactly as written — the next phase read
 
 **What earns a place.** Paths the fix must change; signatures it must match; the branch condition that misbehaves; the wrong value as *actual vs expected*; error text verbatim; the call chain, once.
 
-**What stays out.** Build and lint config, unrelated modules, dependency trees, style conventions, tests that do not exercise the fault, and the story of your own search. Do not narrate; conclude.
+**Paths are relative to `Root`.** `Root` records where you read and at which commit, so a reader in another worktree or branch knows when the exhibits no longer describe its files. Read the branch and commit with `git -C <repo> rev-parse --abbrev-ref HEAD` and `git -C <repo> rev-parse --short HEAD`; `git -C <repo> status --porcelain` tells clean from uncommitted. List every repo a path lives in.
+
+**What stays out.** Build and lint config, unrelated modules, dependency trees, conventions beyond the rules the fix touches, tests that do not exercise the fault, and the story of your own search. Do not narrate; conclude.
 
 **Exhibits are verbatim.** Never retype from memory and never paraphrase. Trim to the enclosing signature plus the fault; a reader must be able to compile the snippet mentally without opening the file.
 
-Typical dossiers run 40–120 lines. Past that you are keeping context, not evidence.
+Typical dossiers run 50–130 lines. Past that you are keeping context, not evidence.
 
 **Done when** the dossier is complete, every path in it exists, and every exhibit matches the file it came from.
 
-### 6. Hand off
+### 8. Hand off
 
 Close with this line, exactly:
 

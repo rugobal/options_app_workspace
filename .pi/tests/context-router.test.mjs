@@ -11,6 +11,7 @@ const FAKE_HOME = mkdtempSync(join(tmpdir(), "ctx-router-home-"));
 process.env.HOME = FAKE_HOME;
 const HANDOFF_FILE = join(FAKE_HOME, ".cache", "pi", "context-router", "pending-route.json");
 const EXT_PATH = fileURLToPath(new URL("../extensions/context-router.ts", import.meta.url));
+const SKILL_PATH = fileURLToPath(new URL("../skills/assess/SKILL.md", import.meta.url));
 
 const { default: contextRouterExtension } = await import(EXT_PATH);
 
@@ -372,7 +373,7 @@ test("typed filter narrows the model list before selecting", async () => {
 
 // --- 13. The handoff is consumed exactly once.
 test("session_start consumes the handoff so it cannot fire twice", async () => {
-	const h = await route(makeHarness({ entries: [assistantEntry(REAL_DOSSIER)], available: [HAIKU] }));
+	await route(makeHarness({ entries: [assistantEntry(REAL_DOSSIER)], available: [HAIKU] }));
 	assert.equal(readHandoff(), undefined, "handoff removed after adoption");
 
 	const again = makeInstance({ available: [HAIKU] });
@@ -459,6 +460,45 @@ test("stops cleanly when no target models are available", async () => {
 	const h = await route(makeHarness({ entries: [assistantEntry(REAL_DOSSIER)], available: [] }));
 	assert.equal(h.newSessions.length, 0);
 	assert.match(h.notices.at(-1).message, /No authenticated target models/);
+});
+
+// --- The skill and the extension each carry the dossier schema; these pin them together.
+
+/** The fenced dossier template the `assess` skill actually ships. */
+function shippedSkillTemplate() {
+	const skill = readFileSync(SKILL_PATH, "utf8");
+	const match = skill.match(/````text\n([\s\S]*?)\n````/);
+	assert.ok(match, "assess skill must ship a ````text dossier template");
+	return match[1];
+}
+
+// --- 18. Drift guard: every section the skill asks for, the fallback extractor asks for too.
+test("extractor prompt carries every section of the shipped skill template", async () => {
+	const headings = shippedSkillTemplate().match(/^## .+$/gm) ?? [];
+	assert.ok(headings.length >= 6, "template should declare its sections");
+	const h = makeHarness({ entries: [userEntry("no dossier here")] });
+	await h.commands.get("route-context").handler("", h.ctx);
+	const prompt = extractionPromptOf(h.sent).text;
+	for (const heading of headings) {
+		assert.ok(prompt.includes(`\n${heading}\n`), `extractor prompt missing ${heading}`);
+	}
+});
+
+// --- 19. Drift guard: the real shipped template is still recognised as a template.
+test("the shipped skill template is never mistaken for a dossier", async () => {
+	const h = makeHarness({ entries: [assistantEntry(shippedSkillTemplate())] });
+	await h.commands.get("route-context").handler("", h.ctx);
+	assert.ok(extractionPromptOf(h.sent), "expected the extraction path");
+	assert.equal(finalizeIdOf(h.sent), undefined, "must not reuse the shipped template");
+});
+
+// --- 20. Exhibits are only authoritative inside the Root they were read from.
+test("continuation prompt scopes exhibits to the dossier's Root", async () => {
+	const h = await route(makeHarness({ entries: [assistantEntry(REAL_DOSSIER)], available: [OPUS] }));
+	const text = continuationOf(h.replacement.sent).text;
+	assert.match(text, /relative to Root/);
+	assert.match(text, /re-read a file/i);
+	assert.match(text, /uncommitted changes/);
 });
 
 let failures = 0;

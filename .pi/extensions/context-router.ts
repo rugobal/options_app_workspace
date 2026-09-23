@@ -1,3 +1,16 @@
+/**
+ * Context Router: phase 2 of the `assess` -> `/route-context` pipeline. It
+ * continues a conversation in a new session, seeded only with the `assess`
+ * dossier, on a model picked by the user.
+ *
+ * Scope: recon-heavy bugs in large or unfamiliar code, where a cheap model can
+ * find the fault by search. Recon was ~4% of pipeline cost in the one measured
+ * run, so the pipeline pays off by handing over a committed diagnosis and the
+ * fixer's conventions, not by making recon cheaper. Design-level bugs need the
+ * stronger model to diagnose, which this pipeline does not do.
+ *
+ * Tests: `npm test` in `.pi/` (tests/context-router.test.mjs).
+ */
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -41,6 +54,8 @@ const TEMPLATE_PLACEHOLDERS = [
 	"<verbatim",
 	"<candidate cause",
 	"<what you could not confirm",
+	"<absolute directory every path below is relative to>",
+	"<exact test command>",
 ];
 
 const DEFAULT_EXCLUSIONS = [
@@ -91,12 +106,16 @@ Output only the dossier. Do not call tools, continue the task, or add commentary
 Wrap the dossier in the two marker lines below, verbatim, and use exactly these section headings between them:
 
 ${DOSSIER_BEGIN}
+## Root
+absolute directory every path below is relative to
+- repo dir — branch @ short commit, clean | uncommitted changes
+
 ## Symptom
 observed, expected, trigger — one line each
 
 ## Fault
-\`path:line\` of the line that diverges, then a short root cause hypothesis
-confidence: high | medium | low — with the single piece of evidence that carries it
+\`path:line\` of the one line that diverges, then a short root cause hypothesis
+confidence: high | medium | low — with the discriminating evidence that carries it
 
 ## Paths
 - \`path/to/file.ext:120-148\` — what this file owes the fix
@@ -111,7 +130,12 @@ verbatim code, trimmed to the enclosing signature plus the fault
 - candidate cause — the line or command that disproved it
 
 ## Unknowns
-- what could not be confirmed by reading alone
+- what could not be confirmed by reading alone, including any undisproved alternative cause and the check that would decide it
+
+## Conventions
+- style or testing doc path — the rule the fix must honour
+- tests: existing test file for the faulty module
+- run: exact test command
 
 ## Excluded
 - exclusion category names only, never values
@@ -120,7 +144,9 @@ ${DOSSIER_END}
 Requirements:
 - Exhibits are verbatim copies of real code from the workspace, never retyped from memory or paraphrased.
 - Preserve exact file paths, symbol names, commands, error messages, versions, and numeric values.
+- Name exactly one fault. Put disproved alternatives under Ruled out and undisproved ones under Unknowns, never beside the fault as equals.
 - If no root cause is confirmed, say so under Fault and set confidence accordingly.
+- Write paths relative to Root, and record only conventions and commands this conversation actually established.
 - Do not infer or invent missing facts; mark them unknown.
 - If this conversation is not about a bug, adapt the sections sensibly rather than inventing a fault.
 - Keep the dossier implementation-ready and omit chit-chat and irrelevant transcript history.
@@ -135,7 +161,7 @@ function extractionSystemPrompt(exclusions: string[]): string {
 }
 
 function continuationPrompt(dossier: string): string {
-	return `Continue the work using the handoff dossier below as your only project-specific conversational context. Treat verified facts and explicit decisions as authoritative, and treat the code in Exhibits as the current contents of those files. Treat assumptions and unknowns as unresolved. Ask before guessing when missing information would materially affect the work. Do not attempt to recover excluded information.
+	return `Continue the work using the handoff dossier below as your only project-specific conversational context. Treat verified facts and explicit decisions as authoritative. Paths are relative to Root, and the code in Exhibits is the contents of those files as read in the tree Root records. Re-read a file before relying on its exhibit if you work in a different worktree, branch, or commit, or if Root records uncommitted changes. Treat assumptions and unknowns as unresolved. Ask before guessing when missing information would materially affect the work. Do not attempt to recover excluded information.
 
 ${dossier}`;
 }
