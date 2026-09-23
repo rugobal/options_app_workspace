@@ -1,0 +1,17 @@
+{
+	"name": "options-app-agent-config",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Type-checking setup for this project's pi extensions. Types only - this is not a pi package.",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "node tests/context-router.test.mjs"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "0.87.0",
+		"@earendil-works/pi-tui": "0.87.0",
+		"@types/node": "^26.6.2",
+		"typescript": "^7.0.2"
+	}
+}
