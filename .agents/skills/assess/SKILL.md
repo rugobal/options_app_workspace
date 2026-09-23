@@ -11,9 +11,13 @@ disable-model-invocation: true
 
 The stronger model never sees this conversation. A context swap replaces it with the dossier alone, so **the dossier is your only deliverable**. Anything you understand but do not write down is lost, and anything you write down is paid for again by the next model.
 
+Invoked as `/skill:assess <bug report>`. (A bare `/assess` is not a pi command — it passes through as plain text and this body never loads.)
+
 ## Your product is a dossier, not a diff
 
 `assess` is a reconnaissance pass. You read; you never write.
+
+The dossier is your entire output. You never grade the report either: no severity rating, no disposition, no judgement on whether it is worth filing. That call belongs to whoever reads the dossier, and prose about it is output the next model pays for and cannot act on.
 
 Never, at any point in this skill:
 
