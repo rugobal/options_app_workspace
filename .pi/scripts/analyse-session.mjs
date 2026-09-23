@@ -19,7 +19,7 @@ const roles = new Map();
 let cost = 0, inp = 0, out = 0, cacheRead = 0, cacheWrite = 0;
 const byModel = new Map(), toolCounts = new Map(), readCounts = new Map();
 const readOrder = [], userMsgs = [], assistantTexts = [], userTurns = [];
-let calls = 0, tools = 0;
+let calls = 0, tools = 0, advisorCalls = 0, advisorCost = 0;
 
 for (const r of recs) {
   if (r.type !== "message") continue;
@@ -53,6 +53,13 @@ for (const r of recs) {
       }
     }
   }
+  // pi-advisor-flow bills the Advisor inside the tool result, not the assistant turn.
+  if (role === "toolResult" && m.details?.advisor && m.details?.usage) {
+    const u = m.details.usage;
+    advisorCalls++;
+    advisorCost += u.cost?.total ?? u.cost ?? 0;
+    cost += u.cost?.total ?? u.cost ?? 0;
+  }
   if (role === "user") {
     const t = parts.filter(p => p.type === "text").map(p => p.text).join("\n");
     if (t) {
@@ -65,6 +72,7 @@ for (const r of recs) {
 console.log("FILE:", f.split("/").pop().slice(0, 40));
 console.log("ROLES:", JSON.stringify([...roles.entries()]));
 console.log(`COST $${cost.toFixed(3)} | input=${inp} output=${out} cacheRead=${cacheRead} cacheWrite=${cacheWrite}`);
+if (advisorCalls) console.log(`   advisor (tool results)  $${advisorCost.toFixed(3)}  calls=${advisorCalls}`);
 for (const [k, v] of byModel) console.log(`   ${k}  $${v.cost.toFixed(3)}  in=${v.inp} out=${v.out} cacheRead=${v.cr} cacheWrite=${v.cw} calls=${v.n}`);
 console.log("TOOLS:", JSON.stringify([...toolCounts.entries()].sort((a, b) => b[1] - a[1])));
 console.log(`READS: ${readOrder.length} total, ${readCounts.size} distinct`);

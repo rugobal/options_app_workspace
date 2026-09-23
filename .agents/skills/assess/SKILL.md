@@ -55,11 +55,13 @@ Follow the faulty value from the trigger to the wrong output, reading the bodies
 
 **Done when** every hop on that path carries a `path:line`, and you can name the single line where behaviour first diverges from intent. That line is the **fault**, and it anchors the hypothesis.
 
-### 5. Commit to one fault
+### 5. Commit to one fault per symptom
 
-The dossier names exactly one fault. A second candidate handed on as an equal passes the diagnosis to the next model at its price, and it will chase the wrong one first.
+The dossier names exactly one fault for each distinct observed symptom. A second candidate handed on as an equal passes the diagnosis to the next model at its price, and it will chase the wrong one first. A second *symptom*, though, is not a second candidate: when the report shows two different wrong outcomes — two states, two errors, on different items — trace each to its own fault, or you will hand on half the bug.
 
-When two candidates survive step 4, **discriminate** before writing: find the evidence only one of them explains — the exact error text, the recorded state, the log line, the symptom's wording. The fault is the candidate that produces the observed symptom exactly; a candidate that explains only part of it is a contributing cause at most.
+Tell them apart by the evidence: two symptoms whose log lines, recorded states, or error texts differ are separate unless one path demonstrably produces both.
+
+When two candidates for the *same* symptom survive step 4, **discriminate** before writing: find the evidence only one of them explains — the exact error text, the recorded state, the log line, the symptom's wording. The fault is the candidate that produces the observed symptom exactly; a candidate that explains only part of it is a contributing cause at most.
 
 - The winner goes under `Fault`, with the discriminating evidence as its confidence line.
 - A disproved candidate goes under `Ruled out`, with what disproved it.
@@ -67,7 +69,9 @@ When two candidates survive step 4, **discriminate** before writing: find the ev
 
 If no evidence separates them, `Fault` still names the likelier one at `confidence: medium` or lower, and `Unknowns` carries the deciding check.
 
-**Done when** `Fault` names one line, and every other candidate sits in `Ruled out` or `Unknowns`.
+**Fix what fails, not only how it got there.** When the fault is a guard that rejects missing or bad state, and you have found one way that state arises but cannot show it is the only one, say so in `Fault`. The fix must then hold at the guard as well — for rows or records already in that state — not only at the one source you found.
+
+**Done when** `Fault` names one line per symptom, each tied to the symptom it explains, and every other candidate sits in `Ruled out` or `Unknowns`.
 
 ### 6. Note the fixer's conventions
 
@@ -96,7 +100,7 @@ Write the dossier as the block below. It is a budget, not a form: the next model
 <observed, expected, trigger — one line each>
 
 ## Fault
-<path:line — the line that diverges>
+<path:line — the line that diverges> (one entry per symptom; prefix each with the symptom it explains when there is more than one)
 <one-paragraph root cause hypothesis>
 <confidence: high | medium | low — and the discriminating evidence that carries it>
 

@@ -355,6 +355,9 @@ test("extractor prompt matches the assess dossier schema", async () => {
 		assert.ok(prompt.includes(heading), `extractor prompt missing ${heading}`);
 	}
 	assert.ok(prompt.includes(SENTINEL_BEGIN) && prompt.includes(SENTINEL_END));
+	// Mirrors the skill's step 5: one fault per symptom, and a fix that holds at the guard.
+	assert.match(prompt, /one fault per distinct observed symptom/);
+	assert.match(prompt, /hold at the guard/);
 });
 
 // --- 12. Typing narrows the list: the filter reaches SelectList, not the list's keys.
