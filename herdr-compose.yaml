@@ -2,7 +2,7 @@ workspaces:
   - name: options
     root: ~/Projects/options_app
     tabs:
-      - label: pi
+      - label: agents
         panes:
           - command: "code .; pi"
             focus: true
