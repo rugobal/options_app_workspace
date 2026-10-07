@@ -1,0 +1,21 @@
+.pf-a-panel { flex: 1; }
+/* One row: title, legend, view switch. No subtitle line, so the charts keep the height. */
+.pf-a-head { display: flex; align-items: center; gap: 24px; flex-shrink: 0; }
+.pf-a-head h3 { font-size: 1.3rem; font-weight: 600; white-space: nowrap; }
+.pf-a-head .pf-legend, .pf-a-head .pf-check { margin-left: auto; }
+.pf-a-charts { flex: 1; min-height: 0; overflow: hidden; margin: 10px 0 8px; }
+.pf-a-chart { position: relative; }
+/* Chart names sit inside the plot's top-left corner instead of taking their own line. */
+.pf-a-chart-label {
+  position: absolute;
+  top: 2px;
+  left: 78px;
+  z-index: 1;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--muted);
+  font-size: 0.88rem;
+  pointer-events: none;
+}
+.pf-a-table { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 10px 0 8px; }
