@@ -10,7 +10,7 @@ Convert one spec into a dependency-ordered implementation plan that an autonomou
 ## Workflow
 
 1. Read the complete source specification yourself. Resolve its title and filename stem, and inventory every requirement, constraint, accepted limitation, identity, schema, index, and observable behavior.
-2. Read the applicable repository `AGENTS.md` files and inspect only enough of the codebase to ground the plan in real modules, clients, types, tests, and architectural patterns. Use exact existing paths and symbols when known; never invent reusable components.
+2. Read the applicable repository `AGENTS.md` files and inspect only enough of the codebase to ground the plan in real modules, clients, types, tests, and architectural patterns. Use exact existing paths and symbols when known; never invent reusable components. When the specification introduces or changes module interfaces, seams, or responsibilities, read the `codebase-design` skill if available and use its guidance to clarify design decisions implementation tasks must preserve. Keep redesign work grounded in the specification and codebase.
 3. Partition the work into atomic tasks sized for one fresh coding-agent session. Give each task one coherent, independently verifiable outcome. Put foundations before their consumers and declare only genuine dependencies.
 4. Map every task to the smallest sufficient set of specification section headings. A task must direct its implementer to read only those named sections, never the entire specification.
 5. Make every task execution-ready:
