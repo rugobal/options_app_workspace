@@ -57,6 +57,7 @@ Create one file for every index row:
 **Index:** [Implementation Plan](./README.md)\
 **Status:** Pending\
 **Depends on:** <List previous tasks by number, or "None">\
+**Risk:** <Low | Normal | High> — <deciding reason>\
 **Specification:** `../<spec_name>.md` *(Read ONLY the sections: "<Section A>", "<Section B>")*
 
 ## Goal

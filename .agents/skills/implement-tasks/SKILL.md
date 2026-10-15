@@ -48,6 +48,14 @@ Recompute the ready set after each integration: selected pending tasks whose pre
 - **Two or more independent ready tasks:** start one fresh orchestrator session for a batch of at most three tasks. Instruct it to spawn one fresh subagent per task, each in its own worktree and branch, then coordinate validation and merge their work. Each worker implements only its assigned task. Cap concurrent implementation subagents at three, or fewer if the environment's capacity requires it. Finish and integrate the batch before dispatching another batch.
 - **User says “do not use subagents” or equivalent:** execute sequentially, one fresh individual session per task. Propagate this restriction to every session. Use a non-subagent session mechanism; do not substitute sequential subagents. Dependency readiness still applies.
 
+Run each worker on the model tier its task's **Risk** names, unless the user names a model:
+
+- `Low`: a small or fast model (for example Haiku 5.5, GPT-6 Luna, DeepSeek v4.1-flash).
+- `Normal`, or no Risk label: a mid-tier model, or a fast model at high effort (for example Sonnet 5.5, GPT-6 Luna or DeepSeek v4.1-flash at high).
+- `High`: a frontier model.
+
+When the session mechanism cannot select a model, use its default and say so in the final report.
+
 Give every dispatch a self-contained brief containing:
 
 - The exact task document path, task number, index path, and source specification path and basename.
@@ -60,13 +68,13 @@ Give every dispatch a self-contained brief containing:
 - The human decision gate: report potential deviations before implementing through them, and leave materiality decisions to the orchestrator.
 - A request to return the task commit ID, changed files, validation commands and results, and remaining issues.
 
-A parallel orchestrator's brief must explicitly request subagents, separate worktrees and branches, serial integration of completed workers with index-conflict resolution, and deletion of only the branches created for this dispatch after successful integration. It coordinates implementation; workers make the code changes, including any fixes required by integration.
+A parallel orchestrator's brief must explicitly request subagents on each task's model tier, separate worktrees and branches, serial integration of completed workers with index-conflict resolution, and deletion of only the branches created for this dispatch after successful integration. It coordinates implementation; workers make the code changes, including any fixes required by integration.
 
 Completion criterion: every dispatched task has a unique implementation session and a traceable checkout; the concurrency and user override rules hold.
 
 ## 4. Commit and advance
 
-Wait for the implementation session to finish successfully. Check the returned diff, acceptance criteria, validation evidence, and task commit. Session termination alone is not success. When a session ends without its task commit, inspect its checkout before dispatching again: keep any partial work, and brief the fresh session with what exists and what remains so it resumes from that work. Apply the human decision gate before requesting corrections: routine defects return to the responsible session, which amends the task commit while its branch is private; material deviations pause the run for the user's decision. Do not advance dependent work until the commit passes.
+Wait for the implementation session to finish successfully. Review the returned diff against the task's implementation points and guardrails, then check the acceptance criteria, validation evidence, and task commit. Session termination alone is not success. When a session ends without its task commit, inspect its checkout before dispatching again: keep any partial work, and brief the fresh session with what exists and what remains so it resumes from that work. Escalate on quality, not infrastructure: when a task still fails its checks after one correction round, or needs a second resume, hand the remaining work to a fresh session one tier up; rerun a session lost to a provider stall, authentication, or quota error on the same tier. Apply the human decision gate before requesting corrections: routine defects return to the responsible session, which amends the task commit while its branch is private; material deviations pause the run for the user's decision. Do not advance dependent work until the commit passes.
 
 The implementation session creates the task commit only after its own required checks pass, and the integration owner verifies it before integrating.
 
@@ -75,7 +83,7 @@ The commit records the assigned task document as completed and verified:
 - Change every completed implementation point and test or acceptance checkbox from `[ ]` to `[x]`. An unchecked required item blocks the commit; record any deliberate deferral in the verification section.
 - Add or update a `## Domain explanation` section with this exact heading, placed before `## Business scenario`. Explain in plain business language what this task implements: the concept it touches, the new or changed behavior, and why it matters. Write like you are talking to a human, not a technical person (don't use code language). Use business domain terms (read `domain.md` in each repository), plain language, clear and concise, and avoid unnecessary verbosity. Do not name files, symbols, functions, or code constructs. This section is required for every task.
 - Add or update a `## Business scenario` section with this exact heading, placed after `## Domain explanation`. Use the same human-friendly language to make the domain explanation concrete: the ordinary situation that triggers the behavior, what goes wrong or is missing today, and what this task makes happen instead. Include a concrete example or scenario whenever one exists; omit the section only for a purely internal task with no plausible business scenario (and say so in the verification section). If the task document already has a scenario, keep it and refine it only when it is missing, inaccurate, or contradicted by the implementation — never rewrite a correct scenario into code language.
-- Add or update an `## Implementation Verification` section with this exact heading; it is the task's single evidence record. Record the implemented behavior and the principal symbols later tasks build on; every departure from the task document (user decisions, unplanned fixes, deferrals); the focused validation commands with their red and green results; and any accepted limitations or follow-up owned by later tasks. Include only evidence produced during the implementation.
+- Add or update an `## Implementation Verification` section with this exact heading; it is the task's single evidence record. Record the implementing model and any escalation, the implemented behavior and the principal symbols later tasks build on; every departure from the task document (user decisions, unplanned fixes, deferrals); the focused validation commands with their red and green results; and any accepted limitations or follow-up owned by later tasks. Include only evidence produced during the implementation.
 
 These sections are business-domain explanations, not restatements of the implementation points. `## Domain explanation` says what the task changes and why; `## Business scenario` shows that change through one concrete situation. Model their tone and level of detail on these examples:
 

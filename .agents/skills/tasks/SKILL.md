@@ -19,7 +19,8 @@ Convert one spec into a dependency-ordered implementation plan that an autonomou
    - Pair hard negative constraints with the intended positive path, so the implementer knows both the boundary and the approved approach.
    - Define idempotency and state-transition behavior when the task can mutate state.
    - Use observable, focused acceptance criteria and the repository's standard test framework.
-6. Audit the plan before returning it. Every in-scope requirement must be owned by at least one task; every task must trace to the exact relevant spec sections; filenames, numbering, links, dependency rows, and task headers must agree. Remove speculative work and requirements not grounded in the specification or repository.
+   - Assign a **Risk** level, which sets the implementer's model tier. `High`: the task changes trade lifecycle state (entry, monitoring, exits, recovery), broker orders or events, state shared across threads, or money and price calculations. `Low`: it follows an existing pattern and touches none of those (docs, copy, wiring, a view or test modelled on a neighbour). `Normal`: everything else. When torn between two levels, take the higher, and give the deciding reason in a few words.
+6. Audit the plan before returning it. Every in-scope requirement must be owned by at least one task; every task must trace to the exact relevant spec sections; filenames, numbering, links, dependency rows, and task headers must agree; every task carries a Risk level. Remove speculative work and requirements not grounded in the specification or repository.
 7. Read [the output contract](references/output-contract.md), then return the complete `README.md` followed by every task file in numeric order. Mark each filepath immediately before its fenced Markdown block. When the user explicitly asks to save the files, create the same directory and contents instead of merely displaying them.
 
 ## Planning boundaries
