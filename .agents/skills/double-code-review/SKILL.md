@@ -30,7 +30,13 @@ Record the selected commit hashes and the first line of each message. Determine 
 
 Dispatch the Standards and Spec sub-agents in parallel with the briefs from `code-review` step 4, pasting the standards sources and smell baseline from step 3 into the Standards brief. The Spec brief takes the task documents named by the selected commits and their source specification as the spec, in place of code-review's issue-tracker discovery.
 
-Wait for both sub-agents to finish. Report a one-line completion status to the user, but hold the findings for the final report.
+**Codex second opinion (Claude only; Codex running this skill skips it).** In the same response as the dispatch, start one Codex review per affected repository as a background Bash command, against the same fixed point:
+
+`node "$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/ | sort -V | tail -1)scripts/codex-companion.mjs" review --wait --scope branch --base <fixed point> --cwd <repo>`
+
+Add `--model <slug>` only when the user has asked for a model. If the script is missing or the run fails, note it and continue without it. Treat Codex as an unverified third reviewer: confirm each finding against the code, discard the ones that don't hold, then file each survivor under Standards or Spec and classify it routine or material like any other finding.
+
+Wait for all reviewers to finish. Report a one-line completion status to the user, but hold the findings for the final report.
 
 ### 2. Fix and commit
 
@@ -55,6 +61,6 @@ Dispatch the second pass exactly as step 1, using the SAME fixed point per repos
 
 Do not use code language. Write to a human, not a technical person: business domain terms, plain language, clear and concise.
 
-Present the complete history of both passes: the findings and fixes of the first pass, then those of the second pass, keeping Standards and Spec separate. Omit the second pass's fixes when material findings prevented them.
+Present the complete history of both passes: the findings and fixes of the first pass, then those of the second pass, keeping Standards and Spec separate and marking the findings that came from Codex. Omit the second pass's fixes when material findings prevented them.
 
 Close with a short bullet summary and a conclusion: state plainly whether everything is complete and ready to push, or that material findings need manual correction.
