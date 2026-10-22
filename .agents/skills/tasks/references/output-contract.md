@@ -58,7 +58,8 @@ Create one file for every index row:
 **Status:** Pending\
 **Depends on:** <List previous tasks by number, or "None">\
 **Risk:** <Low | Normal | High> — <deciding reason>\
-**Specification:** `../<spec_name>.md` *(Read ONLY the sections: "<Section A>", "<Section B>")*
+**Specification:** `../<spec_name>.md` *(Read ONLY the sections: "<Section A>", "<Section B>")*\
+**Requirements:** <Requirement numbers this task owns, such as "R3, R4", or "Not numbered">
 
 ## Goal
 
@@ -81,7 +82,7 @@ Create one file for every index row:
 - [ ] <Data routing, such as the environment/account matrix routing and filtering correctly>
 ```
 
-Use as many checklist items as the task needs for complete, unambiguous execution. Omit an inapplicable category rather than inventing behavior, but always include at least one implementation point covering reuse/boundaries, one hard guardrail where a plausible wrong turn exists, and focused acceptance criteria that prove the goal.
+Use as many checklist items as the task needs for complete, unambiguous execution, and no more: an implementation point adds what the named sections and requirements leave open, and a test that proves one of the specification's acceptance criteria cites it rather than restating it. Omit an inapplicable category rather than inventing behavior, but always include at least one implementation point covering reuse/boundaries, one hard guardrail where a plausible wrong turn exists, and focused acceptance criteria that prove the goal.
 
 ## Response framing
 

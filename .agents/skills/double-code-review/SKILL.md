@@ -1,9 +1,9 @@
 ---
 name: double-code-review
-description: "Review a set of unpushed commits using the code-review skill, fix the routine findings, do a second code-review to catch material deviations or new minor issues, then squash the fixes into a single review commit. Use when the user wants to review and fix unpushed commits, typically after implement-tasks."
+description: "Review a set of unpushed commits using the code-review skill, fix the routine findings, review again when those fixes changed behaviour, then squash the fixes into a single review commit. Use when the user wants to review and fix unpushed commits, typically after implement-tasks."
 ---
 
-Perform a two-pass code review (double review) on a set of unpushed commits, fixing routine findings automatically and verifying them.
+Perform a code review on a set of unpushed commits, fixing routine findings automatically and verifying them, with a second pass whenever the fixes changed behaviour.
 
 This skill delegates to the `code-review` skill. Reuse the parts it owns: the standards sources and smell baseline (code-review step 3), the two parallel sub-agent briefs (step 4), and the Standards/Spec separation. Keep the two axes separate throughout — never rerank a finding across axes.
 
@@ -52,6 +52,8 @@ Take the logical names (like "Task 1") and hashes from the original commits; put
 
 ### 3. Second-pass review
 
+Run the second pass when a step-2 fix changed behaviour: logic, data handling, a contract, or what a test expects. When step 2 made no commit, or its fixes only touched naming, comments, formatting, documentation or test tidying, skip to the final report and state there why the second pass was skipped.
+
 Dispatch the second pass exactly as step 1, using the SAME fixed point per repository, so each diff covers the original commits plus the fixes. Because this skill typically follows `implement-tasks`, the Spec review must check the implementation against the task details and specifications and watch for introduced business-logic deviations.
 
 - **Routine findings only:** fix them and verify with the focused tests for the affected acceptance criteria only (never the full test suite), re-running until they pass. Then squash these fixes into that repository's step-2 review commit, preserving its first line and adding the second-pass details to the body. If step 2 produced no review commit, create one with the same first-line format.
@@ -61,6 +63,6 @@ Dispatch the second pass exactly as step 1, using the SAME fixed point per repos
 
 Do not use code language. Write to a human, not a technical person: business domain terms, plain language, clear and concise.
 
-Present the complete history of both passes: the findings and fixes of the first pass, then those of the second pass, keeping Standards and Spec separate and marking the findings that came from Codex. Omit the second pass's fixes when material findings prevented them.
+Present the complete history of the review: the findings and fixes of the first pass, then those of the second pass or why it was skipped, keeping Standards and Spec separate and marking the findings that came from Codex. Omit the second pass's fixes when material findings prevented them.
 
 Close with a short bullet summary and a conclusion: state plainly whether everything is complete and ready to push, or that material findings need manual correction.

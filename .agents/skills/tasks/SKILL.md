@@ -11,8 +11,8 @@ Convert one spec into a dependency-ordered implementation plan that an autonomou
 
 1. Read the complete source specification yourself. Resolve its title and filename stem, and inventory every requirement, constraint, accepted limitation, identity, schema, index, and observable behavior.
 2. Read the applicable repository `AGENTS.md` files and inspect only enough of the codebase to ground the plan in real modules, clients, types, tests, and architectural patterns. Use exact existing paths and symbols when known; never invent reusable components. When the specification introduces or changes module interfaces, seams, or responsibilities, read the `codebase-design` skill if available and use its guidance to clarify design decisions implementation tasks must preserve. Keep redesign work grounded in the specification and codebase.
-3. Partition the work into atomic tasks sized for one fresh coding-agent session. Give each task one coherent, independently verifiable outcome. Put foundations before their consumers and declare only genuine dependencies.
-4. Map every task to the smallest sufficient set of specification section headings. A task must direct its implementer to read only those named sections, never the entire specification.
+3. Partition the work into tasks of one to two hours of focused work for one fresh coding-agent session, typically four to eight for an epic-sized specification. Give each task one coherent, independently verifiable outcome, and fold steps that share modules and tests into one task. Put foundations before their consumers and declare only genuine dependencies.
+4. Map every task to the smallest sufficient set of specification section headings, and, when the specification numbers its requirements (R1, R2, …), to the numbers it owns. A task must direct its implementer to read only those named sections, never the entire specification.
 5. Make every task execution-ready:
    - Name the existing modules, clients, seams, or patterns to reuse.
    - Fix required data types, serialization formats, schema versions, algorithms, and error boundaries wherever the specification decides them.
@@ -20,14 +20,14 @@ Convert one spec into a dependency-ordered implementation plan that an autonomou
    - Define idempotency and state-transition behavior when the task can mutate state.
    - Use observable, focused acceptance criteria and the repository's standard test framework.
    - Assign a **Risk** level, which sets the implementer's model tier. `High`: the task changes trade lifecycle state (entry, monitoring, exits, recovery), broker orders or events, state shared across threads, or money and price calculations. `Low`: it follows an existing pattern and touches none of those (docs, copy, wiring, a view or test modelled on a neighbour). `Normal`: everything else. When torn between two levels, take the higher, and give the deciding reason in a few words.
-6. Audit the plan before returning it. Every in-scope requirement must be owned by at least one task; every task must trace to the exact relevant spec sections; filenames, numbering, links, dependency rows, and task headers must agree; every task carries a Risk level. Remove speculative work and requirements not grounded in the specification or repository.
-7. Read [the output contract](references/output-contract.md), then return the complete `README.md` followed by every task file in numeric order. Mark each filepath immediately before its fenced Markdown block. When the user explicitly asks to save the files, create the same directory and contents instead of merely displaying them.
+6. Audit the plan before returning it. Every in-scope requirement must be owned by at least one task, by number when the specification numbers them; every task must trace to the exact relevant spec sections; filenames, numbering, links, dependency rows, and task headers must agree; every task carries a Risk level. Remove speculative work and requirements not grounded in the specification or repository.
+7. Read [the output contract](references/output-contract.md), then return the complete `README.md` followed by every task file in numeric order. Mark each filepath immediately before its fenced Markdown block. When the user explicitly asks to save the files, create the same directory and contents instead of merely displaying them. When the saved plan's specification has **Status** and **Task plan** header rows (the epics in `docs/plan/`), also set Status to `Tasks written` and link the new `README.md` from Task plan, keeping any plans already listed.
 
 ## Planning boundaries
 
 - Treat the specification as the source of truth for product behavior. Surface a real ambiguity instead of silently deciding product behavior.
 - Use two-digit task filenames (`task_01_...`, `task_02_...`) and lowercase snake_case brief names.
 - Preserve exact specification heading text in each task's `Specification` pointer.
-- Keep each task self-contained. Include the context needed for that task, but do not duplicate the whole specification or unrelated task instructions.
+- Keep each task thin. The implementer reads the named sections, so product behavior stays in the specification and the task carries only what those sections leave open: the codebase grounding, the decided types and boundaries, and the guardrails.
 - Keep tests proportional to the task. Require focused tests only; repository-wide and full-suite commands are outside every task's scope.
 - Produce implementation documents, not implementation code, issue-tracker tickets, or a prose summary.
