@@ -1,6 +1,6 @@
 ---
 name: magicpath-proposals
-description: Create design proposals for a Simple Option Spreads (options_ui) screen on the MagicPath canvas, grounded in DESIGN.md, the running app and the plan doc. Use when the user asks for MagicPath designs, mockups or proposals for an app screen.
+description: Create design proposals for an EdgeRunner (options_ui) screen on the MagicPath canvas, grounded in DESIGN.md, the running app and the plan doc. Use when the user asks for MagicPath designs, mockups or proposals for an app screen.
 ---
 
 # MagicPath proposals for the desktop app
