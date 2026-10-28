@@ -1,0 +1,538 @@
+/* GENERATED FILE: do not edit. Source: options_ui/src/css/tokens.css.
+   Regenerate from options_ui with `bun run build:canvas-kit`; `bun run lint:canvas-kit` fails when this file is stale.
+
+   Light is :root; dark is :root[data-theme="dark"]. Switch the mock shell's theme on <html>, as the app does:
+       document.documentElement.dataset.theme = theme; // 'light' or 'dark'
+   Components read roles and component tokens, never the --p-* primitives. */
+
+@layer tokens {
+
+:root {
+    /* Primitives used by light (dark may use them too) */
+    --p-amber-20: #fff8e6;
+    --p-amber-156-a16: rgba(255, 193, 7, 0.16);
+    --p-amber-156-a24: rgba(255, 193, 7, 0.24);
+    --p-amber-156-a32: rgba(255, 193, 7, 0.32);
+    --p-amber-161: #f0c36d;
+    --p-amber-359: #b7810f;
+    --p-amber-397: #a57826;
+    --p-amber-499: #6d6603;
+    --p-amber-505: #855706;
+    --p-amber-564: #6f4805;
+    --p-amber-598: #5c4400;
+    --p-cobalt-360: #6192b8;
+    --p-cobalt-425: #2a78d6;
+    --p-cobalt-435-a14: rgba(25, 118, 210, 0.14);
+    --p-cobalt-452: #1b75bb;
+    --p-cobalt-503: #1565a8;
+    --p-cobalt-512: #1460ac;
+    --p-cobalt-583: #124f81;
+    --p-cyan-508: #2b6b78;
+    --p-graphite-49: #efedf8;
+    --p-graphite-581: #4c4c52;
+    --p-graphite-637: #3d3d44;
+    --p-gray-11: #fffafa;
+    --p-gray-19: #f7f9fb;
+    --p-gray-22: #f5f8fb;
+    --p-gray-30: #f5f5f5;
+    --p-gray-39: #f1f2f4;
+    --p-gray-40: #f0f2f5;
+    --p-gray-43: #eef1f4;
+    --p-gray-93: #e0e0e0;
+    --p-gray-217: #b8b8b8;
+    --p-gray-832: rgb(15, 15, 15);
+    --p-green-369: #549f2d;
+    --p-green-477-a14: rgba(46, 125, 50, 0.14);
+    --p-green-525: #286d2c;
+    --p-magenta-440: #b53e95;
+    --p-orange-255-a12: rgba(251, 140, 0, 0.12);
+    --p-orange-329: #eb6834;
+    --p-orange-491: #a54400;
+    --p-orange-502: #8a5424;
+    --p-red-430-a06: rgba(222, 14, 31, 0.06);
+    --p-red-430-a10: rgba(222, 14, 31, 0.1);
+    --p-red-430: rgb(222, 14, 31);
+    --p-red-490-a11: rgba(176, 52, 40, 0.11);
+    --p-red-505: #b80a18;
+    --p-red-536: #9b2c22;
+    --p-red-566: #99091a;
+    --p-slate-37: #f0f3f7;
+    --p-slate-41: #eef2f6;
+    --p-slate-43: #eaf2f9;
+    --p-slate-53: #e9eef3;
+    --p-slate-59: #e3edf5;
+    --p-slate-61: #e8ebef;
+    --p-slate-75: #e1e7ee;
+    --p-slate-80: #d4e8f6;
+    --p-slate-87: #dce3eb;
+    --p-slate-135: #c9d4df;
+    --p-slate-174: #c3c6cc;
+    --p-slate-190: #b9c2cc;
+    --p-slate-235: #a9b4c0;
+    --p-slate-292: #98a2ad;
+    --p-slate-374: #788a9d;
+    --p-slate-431: #68798b;
+    --p-slate-461: #5f7084;
+    --p-slate-514: #526171;
+    --p-slate-558: #445566;
+    --p-slate-631: #3c4043;
+    --p-slate-635: #33404d;
+    --p-slate-705: #2a2d30;
+    --p-slate-731-a32: rgba(29, 39, 51, 0.32);
+    --p-slate-731: #1d2733;
+    --p-slate-738: #212529;
+    --p-teal-469-a08: rgba(25, 125, 108, 0.08);
+    --p-teal-469-a12: rgba(25, 125, 108, 0.12);
+    --p-teal-469-a14: rgba(25, 125, 108, 0.14);
+    --p-teal-469: rgb(25, 125, 108);
+    --p-teal-531: #14695b;
+    --p-violet-165: #c9c3ea;
+    --p-violet-529: #6e34b3;
+    --p-violet-570: #4a3f99;
+    --p-white: #ffffff;
+
+    /* Current legacy values that differ from approved roles. Do not fold them during
+       the no-visible-change rollout (secondary ink, attention text, Bootstrap rows). */
+    --p-gray-413: #8a8a8a;
+    --p-slate-muted-legacy: #5f6368;
+    --p-orange-attention-legacy: #b34a00;
+    --p-slate-row-rule-legacy: #dee2e6;
+    --p-slate-pagination-rule-legacy: #ced4da;
+    --p-cobalt-channels: 27, 117, 187;
+
+    /* Scales. Typeface sizes stay in styles.css's existing per-font profiles. */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --radius-1: 2px;
+    --radius-2: 4px;
+    --radius-3: 8px;
+
+    /* Surfaces */
+    --surface-ground: var(--p-gray-40);
+    --surface: var(--p-white);
+    --surface-raised: var(--p-white);
+    --surface-field: var(--p-white);
+    --surface-track: var(--p-slate-37);
+    --surface-sunken: var(--p-gray-19);
+    --surface-sidebar: var(--p-graphite-637);
+
+    /* Ink */
+    --ink: var(--p-slate-738);
+    --ink-table: var(--p-gray-832);
+    --ink-strong: var(--p-slate-731);
+    --ink-secondary: var(--p-slate-635);
+    --ink-muted: var(--p-slate-514);
+    --ink-disabled: var(--p-slate-292);
+    --ink-on-accent: var(--p-white);
+
+    /* Lines */
+    --rule: var(--p-slate-87);
+    --rule-soft: var(--p-slate-53);
+    --hairline: var(--p-gray-93);
+    --rule-strong: var(--field-border-hover);
+    --focus-ring: var(--p-cobalt-503);
+
+    /* Interaction */
+    --accent: var(--p-cobalt-452);
+    --accent-text: var(--p-cobalt-503);
+    --accent-fill: var(--btn-primary-bg);
+    /* Checked-box edge (D6). */
+    --checkbox-on-edge: var(--btn-primary-edge);
+    --accent-tint: var(--p-slate-43);
+    --control-hover: var(--p-slate-59);
+    --row-hover: var(--p-gray-22);
+    --row-selected: var(--p-slate-43);
+    --row-selected-hover: var(--p-slate-43);
+    --link-hover: var(--p-cobalt-583);
+    --text-selection: var(--p-slate-80);
+    --segment-selected: var(--p-white);
+
+    /* Meaning */
+    --profit: var(--p-teal-469);
+    --loss: var(--p-red-430);
+    --profit-on-tint: var(--p-teal-531);
+    --loss-on-tint: var(--p-red-505);
+    --tp: var(--p-cyan-508);
+    --sl: var(--p-orange-502);
+    --filled-target: var(--p-teal-531);
+    --filled-stop: var(--p-red-536);
+    --filled-target-tint: var(--p-teal-469-a12);
+    --filled-stop-tint: var(--p-red-490-a11);
+    --entering-tint: var(--p-amber-156-a16);
+    --entering-hover: var(--p-amber-156-a24);
+    --entering-selected: var(--p-amber-156-a32);
+    --entering-rule: var(--p-amber-359);
+    --evidence: var(--p-amber-505);
+    --evidence-on-tint: var(--p-amber-564);
+    --status-success-text: var(--p-green-525);
+    --status-info-text: var(--p-cobalt-512);
+    --status-warning-text: var(--p-orange-491);
+    --status-danger-text: var(--p-red-505);
+    --status-success-tint: var(--p-green-477-a14);
+    --status-info-tint: var(--p-cobalt-435-a14);
+    --status-warning-tint: var(--p-orange-255-a12);
+    --status-danger-tint: var(--p-red-430-a10);
+
+    /* Charts */
+    --chart-zero: var(--p-slate-431);
+    --chart-gross: var(--p-cobalt-360);
+    --chart-fee: var(--p-amber-397);
+    --chart-band: var(--p-slate-43);
+    --chart-grid: var(--p-slate-53);
+    --chart-series-1: var(--p-cobalt-425);
+    --chart-series-2: var(--p-orange-329);
+    --chart-series-3: var(--p-magenta-440);
+    --chart-series-4: var(--p-green-369);
+    --chart-series-5: var(--p-violet-529);
+    --chart-series-6: var(--p-amber-499);
+    --chart-axis-ink: var(--ink-muted);
+    --area-profit: var(--p-teal-469-a08);
+    --area-loss: var(--p-red-430-a06);
+
+    /* Actions */
+    --action-bg: var(--p-slate-631);
+    --action-bg-hover: var(--p-slate-705);
+    --action-ink: var(--p-white);
+    --btn-primary-bg: var(--p-cobalt-452);
+    --btn-primary-hover: var(--p-cobalt-503);
+    --btn-primary-edge: var(--p-cobalt-452);
+    --btn-primary-ink: var(--ink-on-accent);
+    --btn-danger-bg: var(--p-red-505);
+    --btn-danger-hover: var(--p-red-566);
+    --btn-danger-ink: var(--ink-on-accent);
+
+    /* Elevation */
+    --shadow-floating: 0 4px 12px rgba(0, 0, 0, 0.18);
+    --scrim: var(--p-slate-731-a32);
+
+    /* Sidebar */
+    --sidebar-active: var(--p-graphite-581);
+    --sidebar-hover: var(--p-cobalt-452);
+    --sidebar-ink: var(--p-gray-30);
+    --sidebar-ink-muted: var(--p-slate-174);
+    --sidebar-rule: transparent;
+    --sidebar-shadow: 2px 0 18px rgba(0, 0, 0, 0.26);
+
+    /* Field */
+    --field-label-gap: var(--space-1);
+    --field-height: 32px;
+    --field-radius: var(--radius-2);
+    --field-label-ink: var(--ink-muted);
+    --field-fill: var(--surface-field);
+    --field-border: var(--p-slate-374);
+    --field-border-hover: var(--p-slate-461);
+    --field-border-focus: var(--accent);
+    --field-border-invalid: var(--loss);
+    --field-fill-invalid: var(--p-gray-11);
+    --field-border-disabled: var(--rule);
+    --field-fill-disabled: var(--surface-track);
+    --field-ink-disabled: var(--ink-disabled);
+
+    /* Switch */
+    --switch-off-border: var(--field-border);
+    --switch-off-track: var(--surface-track);
+    --switch-off-thumb: var(--p-white);
+    --switch-off-thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --switch-on-track: var(--accent-fill);
+    --switch-on-edge: var(--btn-primary-edge);
+    --switch-on-thumb: var(--ink-on-accent);
+
+    /* Chips and badges */
+    --neutral-chip: var(--p-slate-37);
+    --chip-rule: var(--p-slate-190);
+    --state-badge-bg: var(--neutral-chip);
+    --state-badge-ink: var(--ink-muted);
+    --state-badge-rule: var(--p-slate-235);
+    --chip-hedge-bg: var(--p-graphite-49);
+    --chip-hedge-ink: var(--p-violet-570);
+    --chip-hedge-rule: var(--p-violet-165);
+
+    /* Issues box */
+    --issues-tint: var(--p-amber-20);
+    --issues-rule: var(--p-amber-161);
+    --issues-ink: var(--p-amber-598);
+    --issues-title: var(--p-amber-598);
+
+    /* Row states */
+    --chain-itm-tint: var(--p-gray-39);
+    --chain-itm-hover: var(--p-slate-61);
+    --adjusting-tint: var(--p-gray-43);
+    --adjusting-ink: var(--ink-secondary);
+    --leg-simulated-ink: var(--p-slate-558);
+    --leg-simulated-rule: var(--p-slate-374);
+
+    /* Payoff */
+    --payoff-profit-fill: var(--p-teal-469-a14);
+    --payoff-loss-fill: var(--p-red-430-a10);
+    --payoff-expiry-line: var(--p-slate-731);
+    --payoff-today-line: var(--accent);
+    --payoff-date-line: var(--chart-series-3);
+    --payoff-cursor: var(--ink-muted);
+    --payoff-breakeven: var(--chart-zero);
+
+    /* Meter */
+    --meter-track: var(--surface-track);
+    --meter-fill: var(--accent);
+    --meter-ok: var(--meter-fill);
+    --meter-near: var(--meter-ok);
+    --meter-full: var(--status-warning-text);
+
+    /* Shell */
+    --avatar-bg: var(--p-slate-135);
+    --skeleton-a: var(--p-slate-41);
+    --skeleton-b: var(--p-slate-75);
+    --scrollbar-thumb: var(--p-gray-217);
+
+    /* Compatibility aliases for current vanilla consumers. */
+    --page-background: var(--surface-ground);
+    --accent-rgb: var(--p-cobalt-channels);
+    --accent-strong: var(--accent-text);
+    --control-border: var(--p-gray-413);
+    --text-muted: var(--p-slate-muted-legacy);
+    --table-text-color: var(--ink-table);
+    --table-row-rule: var(--p-slate-row-rule-legacy);
+    --pagination-rule: var(--p-slate-pagination-rule-legacy);
+    --color-positive: var(--profit);
+    --color-negative: var(--loss);
+    --protection-tp: var(--tp);
+    --protection-sl: var(--sl);
+    --status-success-fg: var(--status-success-text);
+    --status-info-fg: var(--status-info-text);
+    --status-warning-fg: var(--status-warning-text);
+    --status-attention-bg: var(--status-warning-tint);
+    --status-attention-fg: var(--p-orange-attention-legacy);
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Primitives only dark uses */
+    --p-amber-175: #ebbe6f;
+    --p-amber-201: #ecb33c;
+    --p-amber-219: #dfae68;
+    --p-amber-336: #a09723;
+    --p-amber-648: #49381b;
+    --p-amber-664: #443418;
+    --p-amber-684: #3e2f15;
+    --p-black-a60: rgba(0, 0, 0, 0.6);
+    --p-cobalt-122: #b2ddff;
+    --p-cobalt-186: #8bc9ff;
+    --p-cobalt-190: #87c8ff;
+    --p-cobalt-260: #78b3d7;
+    --p-cobalt-266: #5db0f6;
+    --p-cobalt-279: #50acf6;
+    --p-cobalt-378: #3987e5;
+    --p-cobalt-443: #0078c4;
+    --p-cobalt-488: #0069b4;
+    --p-cobalt-561: #1c5683;
+    --p-cobalt-649: #173c63;
+    --p-cobalt-666: #163956;
+    --p-cobalt-669: #14375a;
+    --p-cobalt-689: #153250;
+    --p-cyan-191: #80d0d9;
+    --p-graphite-66: #e6e9f2;
+    --p-green-174: #85de93;
+    --p-green-210: #6dd39c;
+    --p-green-411: #439230;
+    --p-green-664: #203f27;
+    --p-magenta-379: #c35aa4;
+    --p-magenta-729: #2e222e;
+    --p-orange-181: #feb073;
+    --p-orange-200: #e8b181;
+    --p-orange-378: #d95926;
+    --p-orange-480: #8d5c37;
+    --p-orange-659: #502f17;
+    --p-red-250: #ff8386;
+    --p-red-256: #f58a74;
+    --p-red-256b-a12: rgba(255, 128, 128, 0.12);
+    --p-red-256b-a18: rgba(255, 128, 128, 0.18);
+    --p-red-431: #d0353b;
+    --p-red-473: #c0262e;
+    --p-red-665: #532828;
+    --p-red-666: #512a22;
+    --p-slate-25: #f4f7fc;
+    --p-slate-45: #edf0f7;
+    --p-slate-156: #c3cce0;
+    --p-slate-225: #aab6d0;
+    --p-slate-311: #8c9bbc;
+    --p-slate-360: #7f8ca8;
+    --p-slate-400: #72809f;
+    --p-slate-441: #6b748a;
+    --p-slate-500: #57637e;
+    --p-slate-515: #545f77;
+    --p-slate-520: #525d78;
+    --p-slate-561: #485269;
+    --p-slate-579: #404d69;
+    --p-slate-615: #37435f;
+    --p-slate-620: #37425a;
+    --p-slate-624: #364159;
+    --p-slate-645: #2e3b59;
+    --p-slate-664: #203855;
+    --p-slate-665: #2c364e;
+    --p-slate-670: #2b354c;
+    --p-slate-677: #29334b;
+    --p-slate-682: #293246;
+    --p-slate-685: #283146;
+    --p-slate-692: #252f47;
+    --p-slate-700: #232d45;
+    --p-slate-701: #232d44;
+    --p-slate-701b: #252d40;
+    --p-slate-710: #202b42;
+    --p-slate-734: #1b253b;
+    --p-slate-763: #151e32;
+    --p-slate-783: #11192d;
+    --p-teal-183-a13: rgba(88, 222, 186, 0.13);
+    --p-teal-183-a18: rgba(88, 222, 186, 0.18);
+    --p-teal-189: #48deb3;
+    --p-teal-666: #193f2d;
+    --p-violet-151: #d5c3f8;
+    --p-violet-335: #a577eb;
+    --p-violet-480: #6f5f8e;
+    --p-violet-666: #3b2f51;
+
+    /* Surfaces */
+    --surface-ground: var(--p-slate-783);
+    --surface: var(--p-slate-734);
+    --surface-raised: var(--p-slate-692);
+    --surface-field: var(--p-slate-763);
+    --surface-track: var(--p-slate-677);
+    --surface-sunken: var(--p-slate-763);
+    --surface-sidebar: var(--p-slate-783);
+
+    /* Ink */
+    --ink: var(--p-graphite-66);
+    --ink-table: var(--p-slate-45);
+    --ink-strong: var(--p-slate-25);
+    --ink-secondary: var(--p-slate-156);
+    --ink-muted: var(--p-slate-225);
+    --ink-disabled: var(--p-slate-441);
+    --ink-on-accent: var(--p-white);
+
+    /* Lines */
+    --rule: var(--p-slate-624);
+    --rule-soft: var(--p-slate-670);
+    --hairline: var(--p-slate-620);
+    --focus-ring: var(--p-cobalt-190);
+
+    /* Interaction */
+    --accent: var(--p-cobalt-279);
+    --accent-text: var(--p-cobalt-190);
+    --accent-tint: var(--p-cobalt-669);
+    --control-hover: var(--p-slate-664);
+    --row-hover: var(--p-slate-710);
+    --row-selected: var(--p-cobalt-669);
+    --row-selected-hover: var(--p-cobalt-649);
+    --link-hover: var(--p-cobalt-122);
+    --text-selection: var(--p-cobalt-561);
+    --segment-selected: var(--p-slate-615);
+
+    /* Meaning */
+    --profit: var(--p-teal-189);
+    --loss: var(--p-red-250);
+    --profit-on-tint: var(--p-teal-189);
+    --loss-on-tint: var(--p-red-250);
+    --tp: var(--p-cyan-191);
+    --sl: var(--p-orange-200);
+    --filled-target: var(--p-green-210);
+    --filled-stop: var(--p-red-256);
+    --filled-target-tint: var(--p-teal-666);
+    --filled-stop-tint: var(--p-red-666);
+    --entering-tint: var(--p-amber-684);
+    --entering-hover: var(--p-amber-664);
+    --entering-selected: var(--p-amber-648);
+    --entering-rule: var(--p-amber-201);
+    --evidence: var(--p-amber-175);
+    --evidence-on-tint: var(--p-amber-175);
+    --status-success-text: var(--p-green-174);
+    --status-info-text: var(--p-cobalt-186);
+    --status-warning-text: var(--p-orange-181);
+    --status-danger-text: var(--p-red-250);
+    --status-success-tint: var(--p-green-664);
+    --status-info-tint: var(--p-cobalt-666);
+    --status-warning-tint: var(--p-orange-659);
+    --status-danger-tint: var(--p-red-665);
+
+    /* Charts */
+    --chart-zero: var(--p-slate-360);
+    --chart-gross: var(--p-cobalt-260);
+    --chart-fee: var(--p-amber-219);
+    --chart-band: var(--p-cobalt-689);
+    --chart-grid: var(--p-slate-670);
+    --chart-series-1: var(--p-cobalt-378);
+    --chart-series-2: var(--p-orange-378);
+    --chart-series-3: var(--p-magenta-379);
+    --chart-series-4: var(--p-green-411);
+    --chart-series-5: var(--p-violet-335);
+    --chart-series-6: var(--p-amber-336);
+    --area-profit: var(--p-teal-183-a13);
+    --area-loss: var(--p-red-256b-a12);
+
+    /* Actions */
+    --action-bg: var(--p-slate-561);
+    --action-bg-hover: var(--p-slate-515);
+    --action-ink: var(--p-slate-25);
+    --btn-primary-bg: var(--p-cobalt-443);
+    --btn-primary-hover: var(--p-cobalt-488);
+    --btn-primary-edge: var(--p-cobalt-266);
+    --btn-danger-bg: var(--p-red-473);
+    --btn-danger-hover: var(--p-red-431);
+
+    /* Elevation */
+    --shadow-floating: 0 8px 24px rgba(3, 6, 24, 0.5);
+    --scrim: var(--p-black-a60);
+
+    /* Sidebar */
+    --sidebar-active: var(--p-slate-645);
+    --sidebar-hover: var(--p-slate-700);
+    --sidebar-ink: var(--p-graphite-66);
+    --sidebar-ink-muted: var(--p-slate-225);
+    --sidebar-rule: var(--p-slate-620);
+    --sidebar-shadow: none;
+
+    /* Field */
+    --field-border: var(--p-slate-400);
+    --field-border-hover: var(--p-slate-311);
+    --field-fill-invalid: var(--p-magenta-729);
+
+    /* Switch */
+    --switch-off-thumb: var(--ink-muted);
+    --switch-off-thumb-shadow: none;
+
+    /* Chips and badges */
+    --neutral-chip: var(--p-slate-677);
+    --chip-rule: var(--p-slate-500);
+    --state-badge-rule: var(--p-slate-520);
+    --chip-hedge-bg: var(--p-violet-666);
+    --chip-hedge-ink: var(--p-violet-151);
+    --chip-hedge-rule: var(--p-violet-480);
+
+    /* Issues box */
+    --issues-tint: var(--p-orange-659);
+    --issues-rule: var(--p-orange-480);
+    --issues-ink: var(--ink);
+    --issues-title: var(--p-orange-181);
+
+    /* Row states */
+    --chain-itm-tint: var(--p-slate-701b);
+    --chain-itm-hover: var(--p-slate-682);
+    --adjusting-tint: var(--p-slate-685);
+    --leg-simulated-ink: var(--p-slate-156);
+    --leg-simulated-rule: var(--p-slate-400);
+
+    /* Payoff */
+    --payoff-profit-fill: var(--p-teal-183-a18);
+    --payoff-loss-fill: var(--p-red-256b-a18);
+    --payoff-expiry-line: var(--p-graphite-66);
+
+    /* Shell */
+    --avatar-bg: var(--p-slate-579);
+    --skeleton-a: var(--p-slate-701);
+    --skeleton-b: var(--p-slate-665);
+    --scrollbar-thumb: var(--p-slate-500);
+}
+
+}

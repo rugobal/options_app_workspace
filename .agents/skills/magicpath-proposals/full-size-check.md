@@ -1,6 +1,6 @@
 # Full-size check
 
-Proves each proposal fits the app's default webview (1840×903). Use Claude in Chrome. If several browsers are connected, ask the user which one to use.
+Proves each proposal fits the app's default webview (1840×903) in both themes. Use Claude in Chrome. If several browsers are connected, ask the user which one to use.
 
 ## Procedure
 
@@ -22,7 +22,9 @@ Proves each proposal fits the app's default webview (1840×903). Use Claude in C
 
 3. Exercise the interactions that change layout: the longest date preset, each grouping, the Chart/Table switch, and the Design preview states. Check that the selected table row is inside the scroll box after a switch.
 
-4. Close the tab when done.
+4. Switch to the dark theme with the shell's Design preview **Dark** button (or `d.documentElement.dataset.theme = 'dark'`) and repeat steps 1 and 2. Check that no light surface, ink or rule is left behind (a white panel or a dark-on-dark label means a colour bypasses the kit), and that profit, loss, the accent and the selected row still read.
+
+5. Close the tab when done.
 
 ## Pitfalls
 

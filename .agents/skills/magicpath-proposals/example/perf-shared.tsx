@@ -467,7 +467,24 @@ const PREVIEWS: { key: PreviewState; label: string }[] = [
   { key: 'zero', label: 'All $0' },
 ];
 
+const THEMES = [
+  { key: 'light', label: 'Light' },
+  { key: 'dark', label: 'Dark' },
+] as const;
+
+type Theme = (typeof THEMES)[number]['key'];
+
+/** The app sets data-theme on <html>; the kit's aliases only follow the theme from there. */
+function useCanvasTheme() {
+  const [theme, setTheme] = useState<Theme>('light');
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  return [theme, setTheme] as const;
+}
+
 export function AppShell({ model, children }: { model: Model; children: ReactNode }) {
+  const [theme, setTheme] = useCanvasTheme();
   const nav: [string, string][] = [
     ['home', 'Home'],
     ['edit', 'Templates'],
@@ -503,6 +520,13 @@ export function AppShell({ model, children }: { model: Model; children: ReactNod
             {PREVIEWS.map((p) => (
               <button key={p.key} type="button" aria-pressed={model.preview === p.key} onClick={() => model.setPreview(p.key)}>
                 {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="pf-preview pf-theme" role="group" aria-label="Design preview theme">
+            {THEMES.map((t) => (
+              <button key={t.key} type="button" aria-pressed={theme === t.key} onClick={() => setTheme(t.key)}>
+                {t.label}
               </button>
             ))}
           </div>
