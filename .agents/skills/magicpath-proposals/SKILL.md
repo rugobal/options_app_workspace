@@ -21,7 +21,7 @@ Collect, from the user's message and the repo:
 - `options_ui/DESIGN.md`, `options_ui/PRODUCT.md`, and the screen's `options_ui/docs/*-screen.md`;
 - the screen's **surface** in the window budget (step 3).
 
-Run `bun run lint:canvas-kit` from `options_ui/`. If it reports the kit stale, run `bun run build:canvas-kit` and tell the user the kit changed (it is committed in the workspace repo). The kit, [`kit/edgerunner-tokens.css`](kit/edgerunner-tokens.css), is the app's whole token layer, light and dark, generated from `options_ui/src/css/tokens.css`.
+Run `bun run lint:canvas-kit` from `options_ui/`. If it reports the kit stale, run `bun run build:canvas-kit` and tell the user the kit changed (it is committed in the workspace repo). The kit, [`kit/edgerunner-tokens.css`](kit/edgerunner-tokens.css), is generated from `options_ui/src/css/tokens.css`: the app's token rules, light and dark, without the `@layer` wrapper, so they beat the MagicPath template's own `:root` variables.
 
 Then grep `options_ui/src/css/styles.css` for the reference surface's selector prefix and note its real values (panel padding, borders, type sizes, breakpoints). Proposals copy those numbers, not approximations.
 
@@ -62,7 +62,7 @@ Start from [`example/`](example/) — the Performance work's shared module (app 
 Each proposal:
 
 - renders the full shell (sidebar, top bar, tabs, toolbar) at frame size, so fit can be judged honestly;
-- uses a plain CSS file beside the component with Public Sans, rather than Tailwind, and takes every colour from the kit's role and component tokens (`var(--surface)`, `var(--ink-muted)`, `var(--profit)`…), never a `--p-*` primitive or a literal, so both themes come from the same values as the app;
+- uses a plain CSS file beside the component with Public Sans, rather than Tailwind, and takes every colour from the kit's role and component tokens (`var(--surface)`, `var(--ink-muted)`, `var(--profit)`…), never a `--p-*` primitive or a literal, so both themes come from the same values as the app. White text or icons on cobalt sit on `--accent-fill`, never `--accent` (DESIGN.md D3: white on the dark accent is 2.45:1);
 - renders in both themes: the shell's Design preview carries a Light/Dark switch, which sets `data-theme` on `<html>` as the app does;
 - fills the remaining height with a flex column whose analysis area has a minimum height and scrolls internally;
 - is fully interactive with deterministic mock data, plus a "Design preview" switcher in the top bar for loading, error, empty and edge-case states (single item, all-zero);

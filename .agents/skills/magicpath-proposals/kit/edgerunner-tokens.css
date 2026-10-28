@@ -3,9 +3,9 @@
 
    Light is :root; dark is :root[data-theme="dark"]. Switch the mock shell's theme on <html>, as the app does:
        document.documentElement.dataset.theme = theme; // 'light' or 'dark'
-   Components read roles and component tokens, never the --p-* primitives. */
-
-@layer tokens {
+   Components read roles and component tokens, never the --p-* primitives.
+   These are the app's @layer tokens rules without the layer, so they win over the template's own
+   :root variables of the same name; import this file from component CSS, which loads after index.css. */
 
 :root {
     /* Primitives used by light (dark may use them too) */
@@ -533,6 +533,4 @@
     --skeleton-a: var(--p-slate-701);
     --skeleton-b: var(--p-slate-665);
     --scrollbar-thumb: var(--p-slate-500);
-}
-
 }

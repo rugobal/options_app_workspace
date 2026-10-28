@@ -9,6 +9,7 @@
 .pf-app {
   --cobalt: var(--accent);
   --cobalt-text: var(--accent-text);
+  --cobalt-fill: var(--accent-fill);
   --table-ink: var(--ink-table);
   --muted: var(--ink-muted);
   --row-rule: var(--rule-soft);
@@ -67,7 +68,7 @@
   background: transparent;
   cursor: pointer;
 }
-.pf-side-menu { background: var(--cobalt); }
+.pf-app .pf-side-menu { background: var(--cobalt-fill); color: var(--ink-on-accent); }
 .pf-side-link:hover { background: var(--sidebar-hover); }
 .pf-side-link.is-active { background: var(--graphite-active); }
 .pf-app .pf-side-link:focus-visible, .pf-app .pf-side-menu:focus-visible { outline-color: var(--sidebar-ink); outline-offset: -4px; }
@@ -177,7 +178,7 @@
 .pf-preset[aria-pressed='true'] { background: var(--control-hover); border-color: var(--cobalt); color: var(--cobalt-text); font-weight: 500; }
 .pf-filters-button { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px 0 12px; }
 .pf-filters-button[aria-expanded='true'] { border-color: var(--cobalt); color: var(--cobalt-text); }
-.pf-filters-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--cobalt); color: var(--ink-on-accent); font-size: 11px; display: grid; place-items: center; }
+.pf-filters-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--cobalt-fill); color: var(--ink-on-accent); font-size: 11px; display: grid; place-items: center; }
 
 .pf-filters {
   position: absolute;
