@@ -110,13 +110,13 @@ Continue until every selected task meets the completion criterion. If a failure 
 Close every run with one commit per affected repository whose first line is `Record progress of {spec_file_name}`, containing whichever of these apply:
 
 - When the run completed the plan's last pending task, the plan explanation: read [the plan explanation guide](references/plan-explanation.md) and add its two sections to the plan's `README.md`.
-- When the source specification tracks its own progress (a **Status** header row and checkboxes on its acceptance criteria, like the epics in `docs/plan/`), that tracking brought up to date, as below.
+- When the source specification tracks its own progress (a **Status** header row, a **Progress** section and checkboxes on its acceptance criteria, like the epics in `docs/plan/`), that tracking brought up to date, as below.
 
 Progress tracking:
 
 - Tick each acceptance criterion the integrated work proves, citing the task verification sections as evidence. A criterion that needs proof beyond the tasks (a paper run, a measurement, a check on another operating system) stays unticked; name it in the report. A specification can have several plans: tick only what this plan's work proves.
-- Set **Status** to `Done` when every criterion is ticked, and to `In progress` otherwise.
-- When the specification becomes `Done`, tick its row in the roadmap that lists it.
+- In the **Progress** section, set each partition item this plan built to `Built {date}` (or `Part built: …` naming what is left), and recount the summary line above the table: items built and acceptance criteria proven.
+- Set **Status** to `Done` when every criterion is ticked, and to `In progress` otherwise. Copy the new Status into the Status column of the roadmap's Epics table, which mirrors it.
 
 Report completed task numbers, commit IDs, validation results, and any selected tasks still blocked. On resumption, re-read the index and Git history so an interruption between implementation and commit does not cause duplicate implementation.
 
