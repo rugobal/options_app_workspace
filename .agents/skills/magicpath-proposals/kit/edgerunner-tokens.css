@@ -20,6 +20,8 @@
     --p-amber-505: #855706;
     --p-amber-564: #6f4805;
     --p-amber-598: #5c4400;
+    --p-black: #000000;
+    --p-black-a15: rgba(0, 0, 0, 0.15);
     --p-cobalt-360: #6192b8;
     --p-cobalt-425: #2a78d6;
     --p-cobalt-435-a14: rgba(25, 118, 210, 0.14);
@@ -38,6 +40,7 @@
     --p-gray-39: #f1f2f4;
     --p-gray-40: #f0f2f5;
     --p-gray-43: #eef1f4;
+    --p-gray-58: #e9ecef;
     --p-gray-93: #e0e0e0;
     --p-gray-217: #b8b8b8;
     --p-gray-832: rgb(15, 15, 15);
@@ -62,17 +65,22 @@
     --p-slate-53: #e9eef3;
     --p-slate-59: #e3edf5;
     --p-slate-61: #e8ebef;
+    --p-slate-73: #e3e7ef;
     --p-slate-75: #e1e7ee;
     --p-slate-80: #d4e8f6;
     --p-slate-87: #dce3eb;
+    --p-slate-113: #d5dae4;
     --p-slate-135: #c9d4df;
     --p-slate-174: #c3c6cc;
     --p-slate-190: #b9c2cc;
+    --p-slate-209: #b3bcc6;
     --p-slate-235: #a9b4c0;
+    --p-slate-283: #9aa5b1;
     --p-slate-292: #98a2ad;
     --p-slate-374: #788a9d;
     --p-slate-431: #68798b;
     --p-slate-461: #5f7084;
+    --p-slate-498: #5b6475;
     --p-slate-514: #526171;
     --p-slate-558: #445566;
     --p-slate-631: #3c4043;
@@ -81,6 +89,8 @@
     --p-slate-731-a32: rgba(29, 39, 51, 0.32);
     --p-slate-731: #1d2733;
     --p-slate-738: #212529;
+    --p-slate-739: #1f2430;
+    --p-slate-754: #1e2125;
     --p-teal-469-a08: rgba(25, 125, 108, 0.08);
     --p-teal-469-a12: rgba(25, 125, 108, 0.12);
     --p-teal-469-a14: rgba(25, 125, 108, 0.14);
@@ -200,6 +210,7 @@
     --btn-primary-bg: var(--p-cobalt-452);
     --btn-primary-hover: var(--p-cobalt-503);
     --btn-primary-edge: var(--p-cobalt-452);
+    --btn-primary-hover-edge: var(--btn-primary-hover);
     --btn-primary-ink: var(--ink-on-accent);
     --btn-danger-bg: var(--p-red-505);
     --btn-danger-hover: var(--p-red-566);
@@ -227,6 +238,7 @@
     --field-border-hover: var(--p-slate-461);
     --field-border-focus: var(--accent);
     --field-border-invalid: var(--loss);
+    --field-error-text: var(--loss);
     --field-fill-invalid: var(--p-gray-11);
     --field-border-disabled: var(--rule);
     --field-fill-disabled: var(--surface-track);
@@ -240,6 +252,24 @@
     --switch-on-track: var(--accent-fill);
     --switch-on-edge: var(--btn-primary-edge);
     --switch-on-thumb: var(--ink-on-accent);
+
+    /* Buttons: the quiet toolbar button's disabled words and icon (.templates-tool) */
+    --btn-quiet-disabled-ink: var(--p-slate-283);
+    --btn-quiet-disabled-icon: var(--p-slate-209);
+
+    /* Menus: Home's dropdown menus and the select's list */
+    --menu-border: var(--p-black-a15);
+    --menu-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1), 0px 0px 4px rgba(0, 0, 0, 0.05);
+    --menu-item-highlight: var(--p-gray-58);
+    --menu-item-hover-ink: var(--p-slate-754);
+    --select-option-ink: var(--p-black);
+    --select-menu-shadow: 0px 5px 5px -3px rgba(0, 0, 0, 0.2), 0px 8px 10px 1px rgba(0, 0, 0, 0.14), 0px 3px 14px 2px rgba(0, 0, 0, 0.12);
+
+    /* Quick Trade: the dock's words, quiet words, outlines and hairlines (.qt-dock, the Size stepper) */
+    --qt-ink: var(--p-slate-739);
+    --qt-muted: var(--p-slate-498);
+    --qt-border: var(--p-slate-113);
+    --qt-rule: var(--p-slate-73);
 
     /* Chips and badges */
     --neutral-chip: var(--p-slate-37);
@@ -478,6 +508,7 @@
     --btn-primary-bg: var(--p-cobalt-443);
     --btn-primary-hover: var(--p-cobalt-488);
     --btn-primary-edge: var(--p-cobalt-266);
+    --btn-primary-hover-edge: var(--btn-primary-edge);
     --btn-danger-bg: var(--p-red-473);
     --btn-danger-hover: var(--p-red-431);
 
@@ -501,6 +532,24 @@
     /* Switch */
     --switch-off-thumb: var(--ink-muted);
     --switch-off-thumb-shadow: none;
+
+    /* Buttons */
+    --btn-quiet-disabled-ink: var(--ink-disabled);
+    --btn-quiet-disabled-icon: var(--ink-disabled);
+
+    /* Menus */
+    --menu-border: var(--rule);
+    --menu-shadow: var(--shadow-floating);
+    --menu-item-highlight: var(--control-hover);
+    --menu-item-hover-ink: var(--ink);
+    --select-option-ink: var(--ink);
+    --select-menu-shadow: var(--shadow-floating);
+
+    /* Quick Trade */
+    --qt-ink: var(--ink);
+    --qt-muted: var(--ink-muted);
+    --qt-border: var(--field-border);
+    --qt-rule: var(--rule-soft);
 
     /* Chips and badges */
     --neutral-chip: var(--p-slate-677);
