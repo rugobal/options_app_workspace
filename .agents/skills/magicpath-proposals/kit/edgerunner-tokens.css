@@ -10,18 +10,29 @@
 :root {
     /* Primitives used by light (dark may use them too) */
     --p-amber-20: #fff8e6;
+    --p-amber-156-a14: rgba(255, 193, 7, 0.14);
     --p-amber-156-a16: rgba(255, 193, 7, 0.16);
     --p-amber-156-a24: rgba(255, 193, 7, 0.24);
     --p-amber-156-a32: rgba(255, 193, 7, 0.32);
+    --p-amber-156-a38: rgba(255, 193, 7, 0.38);
     --p-amber-161: #f0c36d;
     --p-amber-359: #b7810f;
+    --p-amber-375-a35: rgba(176, 125, 0, 0.35);
+    --p-amber-375-a45: rgba(176, 125, 0, 0.45);
+    --p-amber-375: #b07d00;
     --p-amber-397: #a57826;
     --p-amber-499: #6d6603;
     --p-amber-505: #855706;
     --p-amber-564: #6f4805;
     --p-amber-598: #5c4400;
     --p-black: #000000;
+    --p-black-a08: rgba(0, 0, 0, 0.08);
+    --p-black-a12: rgba(0, 0, 0, 0.12);
+    --p-black-a14: rgba(0, 0, 0, 0.14);
     --p-black-a15: rgba(0, 0, 0, 0.15);
+    --p-black-a20: rgba(0, 0, 0, 0.2);
+    --p-black-a25: rgba(0, 0, 0, 0.25);
+    --p-black-a65: rgba(0, 0, 0, 0.65);
     --p-cobalt-360: #6192b8;
     --p-cobalt-425: #2a78d6;
     --p-cobalt-435-a14: rgba(25, 118, 210, 0.14);
@@ -42,20 +53,26 @@
     --p-gray-43: #eef1f4;
     --p-gray-58: #e9ecef;
     --p-gray-93: #e0e0e0;
+    --p-gray-202: #bdbdbd;
     --p-gray-217: #b8b8b8;
+    --p-gray-679: #333333;
     --p-gray-832: rgb(15, 15, 15);
     --p-green-369: #549f2d;
     --p-green-477-a14: rgba(46, 125, 50, 0.14);
     --p-green-525: #286d2c;
     --p-magenta-440: #b53e95;
     --p-orange-255-a12: rgba(251, 140, 0, 0.12);
+    --p-orange-323-a14: rgba(237, 108, 2, 0.14);
     --p-orange-329: #eb6834;
     --p-orange-491: #a54400;
+    --p-orange-493: #9f4901;
     --p-orange-502: #8a5424;
     --p-red-430-a06: rgba(222, 14, 31, 0.06);
     --p-red-430-a10: rgba(222, 14, 31, 0.1);
     --p-red-430: rgb(222, 14, 31);
+    --p-red-432-a14: rgba(211, 47, 47, 0.14);
     --p-red-490-a11: rgba(176, 52, 40, 0.11);
+    --p-red-498: #b32626;
     --p-red-505: #b80a18;
     --p-red-536: #9b2c22;
     --p-red-566: #99091a;
@@ -72,6 +89,7 @@
     --p-slate-113: #d5dae4;
     --p-slate-135: #c9d4df;
     --p-slate-174: #c3c6cc;
+    --p-slate-182: #b9c5d1;
     --p-slate-190: #b9c2cc;
     --p-slate-209: #b3bcc6;
     --p-slate-235: #a9b4c0;
@@ -82,10 +100,15 @@
     --p-slate-461: #5f7084;
     --p-slate-498: #5b6475;
     --p-slate-514: #526171;
+    --p-slate-546-a14: rgba(69, 90, 100, 0.14);
+    --p-slate-546: #455a64;
     --p-slate-558: #445566;
     --p-slate-631: #3c4043;
     --p-slate-635: #33404d;
     --p-slate-705: #2a2d30;
+    --p-slate-731-a18: rgba(29, 39, 51, 0.18);
+    --p-slate-731-a20: rgba(29, 39, 51, 0.2);
+    --p-slate-731-a22: rgba(29, 39, 51, .22);
     --p-slate-731-a32: rgba(29, 39, 51, 0.32);
     --p-slate-731: #1d2733;
     --p-slate-738: #212529;
@@ -95,10 +118,15 @@
     --p-teal-469-a12: rgba(25, 125, 108, 0.12);
     --p-teal-469-a14: rgba(25, 125, 108, 0.14);
     --p-teal-469: rgb(25, 125, 108);
+    --p-teal-483-a14: rgba(0, 121, 107, 0.14);
+    --p-teal-527: #006b5e;
     --p-teal-531: #14695b;
     --p-violet-165: #c9c3ea;
     --p-violet-529: #6e34b3;
     --p-violet-570: #4a3f99;
+    --p-white-a35: rgba(255, 255, 255, 0.35);
+    --p-white-a72: rgba(255, 255, 255, 0.72);
+    --p-white-a87: rgba(255, 255, 255, 0.87);
     --p-white: #ffffff;
 
     /* Current legacy values that differ from approved roles. Do not fold them during
@@ -318,6 +346,44 @@
     --skeleton-a: var(--p-slate-41);
     --skeleton-b: var(--p-slate-75);
     --scrollbar-thumb: var(--p-gray-217);
+
+    /* React twins: exact light values, approved dark roles. */
+    --tabs-hover-underline: var(--p-gray-202);
+    --tooltip-bg: var(--p-gray-679);
+    --tooltip-ink: var(--p-white);
+    --tooltip-shadow: 0 2px 8px var(--p-black-a25);
+    --chip-full-bg: var(--status-success-tint);
+    --chip-partial-bg: var(--p-orange-323-a14);
+    --chip-partial-ink: var(--p-orange-493);
+    --chip-expired-bg: var(--p-slate-546-a14);
+    --chip-expired-ink: var(--p-slate-546);
+    --chip-broker-bg: var(--status-info-tint);
+    --chip-stop-bg: var(--p-red-432-a14);
+    --chip-stop-ink: var(--p-red-498);
+    --chip-app-bg: var(--p-teal-483-a14);
+    --chip-app-ink: var(--p-teal-527);
+    --chip-attention-ink: var(--p-orange-attention-legacy);
+    --chip-manual-bg: var(--p-black-a08);
+    --chip-manual-ink: var(--p-black-a65);
+    --chip-quantity-bg: var(--p-white-a72);
+    --chip-neutral-ink: var(--p-slate-558);
+    --chip-review-bg: var(--p-amber-156-a38);
+    --chip-review-searching-bg: var(--p-amber-156-a14);
+    --chip-review-dot: var(--p-amber-375);
+    --chip-review-approving-shadow: inset 0 0 0 1px var(--p-amber-375-a45);
+    --chip-review-searching-shadow: inset 0 0 0 1px var(--p-amber-375-a35);
+    --dialog-shadow: 0 16px 40px var(--p-slate-731-a22);
+    --dialog-popover-shadow: 0 10px 28px var(--p-slate-731-a20);
+    --dialog-input-border: var(--p-slate-182);
+    --dialog-neutral-bg: var(--p-cobalt-503);
+    --dialog-neutral-hover: var(--p-cobalt-583);
+    --dialog-spinner-ring: var(--p-white-a35);
+    --dialog-spinner-tip: var(--ink-on-accent);
+    --toast-alert-shadow: 0 10px 28px var(--p-slate-731-a18);
+    --toast-dismiss-ink: var(--p-slate-558);
+    --toast-notification-bg: var(--p-gray-679);
+    --toast-notification-ink: var(--p-white-a87);
+    --toast-notification-shadow: 0px 3px 5px -1px var(--p-black-a20), 0px 6px 10px 0px var(--p-black-a14), 0px 1px 18px 0px var(--p-black-a12);
 
     /* Compatibility aliases for current vanilla consumers. */
     --page-background: var(--surface-ground);
@@ -578,6 +644,41 @@
     --payoff-profit-fill: var(--p-teal-183-a18);
     --payoff-loss-fill: var(--p-red-256b-a18);
     --payoff-expiry-line: var(--p-graphite-66);
+
+    /* React twins */
+    --tabs-hover-underline: var(--ink-disabled);
+    --tooltip-bg: var(--surface-raised);
+    --tooltip-ink: var(--ink);
+    --tooltip-shadow: var(--shadow-floating);
+    --chip-partial-bg: var(--status-warning-tint);
+    --chip-partial-ink: var(--status-warning-text);
+    --chip-expired-bg: var(--neutral-chip);
+    --chip-expired-ink: var(--ink-secondary);
+    --chip-stop-bg: var(--status-danger-tint);
+    --chip-stop-ink: var(--status-danger-text);
+    --chip-app-bg: var(--filled-target-tint);
+    --chip-app-ink: var(--filled-target);
+    --chip-attention-ink: var(--status-warning-text);
+    --chip-manual-bg: var(--neutral-chip);
+    --chip-manual-ink: var(--ink-secondary);
+    --chip-quantity-bg: var(--surface-raised);
+    --chip-neutral-ink: var(--ink-secondary);
+    --chip-review-bg: var(--entering-tint);
+    --chip-review-searching-bg: var(--entering-tint);
+    --chip-review-dot: var(--entering-rule);
+    --chip-review-approving-shadow: inset 0 0 0 1px var(--entering-rule);
+    --chip-review-searching-shadow: inset 0 0 0 1px var(--entering-rule);
+    --dialog-shadow: var(--shadow-floating);
+    --dialog-popover-shadow: var(--shadow-floating);
+    --dialog-input-border: var(--field-border);
+    --dialog-neutral-bg: var(--btn-primary-bg);
+    --dialog-neutral-hover: var(--btn-primary-hover);
+    --dialog-spinner-ring: var(--rule);
+    --toast-alert-shadow: var(--shadow-floating);
+    --toast-dismiss-ink: var(--ink-secondary);
+    --toast-notification-bg: var(--surface-raised);
+    --toast-notification-ink: var(--ink);
+    --toast-notification-shadow: var(--shadow-floating);
 
     /* Shell */
     --avatar-bg: var(--p-slate-579);
