@@ -55,6 +55,7 @@
     --p-gray-93: #e0e0e0;
     --p-gray-202: #bdbdbd;
     --p-gray-217: #b8b8b8;
+    --p-gray-605: #444746;
     --p-gray-679: #333333;
     --p-gray-832: rgb(15, 15, 15);
     --p-green-369: #549f2d;
@@ -180,6 +181,8 @@
     --accent-fill: var(--btn-primary-bg);
     /* Checked-box edge (D6). */
     --checkbox-on-edge: var(--btn-primary-edge);
+    /* Unchecked-box 2px border. */
+    --checkbox-off-edge: var(--p-gray-605);
     --accent-tint: var(--p-slate-43);
     --control-hover: var(--p-slate-59);
     --row-hover: var(--p-gray-22);
@@ -519,6 +522,7 @@
     /* Interaction */
     --accent: var(--p-cobalt-279);
     --accent-text: var(--p-cobalt-190);
+    --checkbox-off-edge: var(--ink-muted);
     --accent-tint: var(--p-cobalt-669);
     --control-hover: var(--p-slate-664);
     --row-hover: var(--p-slate-710);
