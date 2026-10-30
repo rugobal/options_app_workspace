@@ -253,9 +253,11 @@
     --switch-on-edge: var(--btn-primary-edge);
     --switch-on-thumb: var(--ink-on-accent);
 
-    /* Buttons: the quiet toolbar button's disabled words and icon (.templates-tool) */
-    --btn-quiet-disabled-ink: var(--p-slate-283);
-    --btn-quiet-disabled-icon: var(--p-slate-209);
+    /* Buttons and choice controls: disabled words and icons (51a). */
+    --btn-disabled-ink: var(--p-slate-283);
+    --btn-disabled-icon: var(--p-slate-209);
+    --btn-quiet-disabled-ink: var(--btn-disabled-ink);
+    --btn-quiet-disabled-icon: var(--btn-disabled-icon);
 
     /* Menus: Home's dropdown menus and the select's list */
     --menu-border: var(--p-black-a15);
@@ -534,8 +536,8 @@
     --switch-off-thumb-shadow: none;
 
     /* Buttons */
-    --btn-quiet-disabled-ink: var(--ink-disabled);
-    --btn-quiet-disabled-icon: var(--ink-disabled);
+    --btn-disabled-ink: var(--ink-disabled);
+    --btn-disabled-icon: var(--ink-disabled);
 
     /* Menus */
     --menu-border: var(--rule);
