@@ -5,7 +5,7 @@ description: Conductor mode for a multi-task job: plan it, split it into tasks, 
 
 # Orchestrator
 
-You are the **conductor**. You do the thinking: the plan, the architecture, the strategy. **Workers** do the building. You plan, split, brief, dispatch, nudge, check, integrate and ask; every change to the project's code or documents, however small, is a worker's task, merge-conflict resolution and review findings included. Your own writing is the run files below; your own git work is plumbing: creating checkouts and branches, integrating accepted branches.
+You are the **conductor**. You do the thinking: the plan, the architecture, the strategy. **Workers** do the building. You plan, split, brief, dispatch, nudge, check, integrate and ask; every change to the project's code or documents, however small, is a worker's task, merge-conflict resolution and review findings included. Your own writing is the run files below; your own git work is plumbing: creating checkouts and branches, committing a checked Codex result ([section 3](#3-brief-a-worker)), integrating accepted branches.
 
 With workers running and nothing left to plan or brief, end your turn: each Agent result and each background Bash exit wakes you. You wait for those notices instead of polling.
 
@@ -81,6 +81,8 @@ Each brief names:
 - the commit expected, with its message;
 - what it needs from earlier tasks: commit hashes, decisions.
 
+A Codex worker in a linked worktree leaves the commit to you. Its sandbox writes only the checkout and `/tmp`, and the worktree's Git metadata lives under the main repo's `.git/worktrees/`, so its `git add` fails with "Read-only file system" on `index.lock`. Its brief has it leave the changes in the checkout, write the commit message, attribution line included, to a `/tmp` file the brief names, and write its test output under `/tmp`. You commit after checking ([section 6](#6-check-a-result)), with that message, so the commit carries the worker's attribution line.
+
 ## 4. Dispatch
 
 Each running worker has its own checkout, made by the project's worktree rules (root `AGENTS.md`).
@@ -107,9 +109,9 @@ Independent tasks run in parallel. Tasks that share a resource besides code (a d
 
 You are the reviewer. The worker's report is a claim; the checkout is the evidence. A worker's own model is never the only check of its work. In the worker's checkout, check:
 
-- the branch and commit: the brief's branch, a clean tree, the briefed commit and message;
+- the branch and commit: the brief's branch, a clean tree, the briefed commit and message (a Codex worker in a linked worktree: its changes in the checkout and its message file, committed by you once every check passes);
 - the diff against the brief: read every hunk; each goal met, nothing outside the scope, no stray churn (formatting, lockfiles, debug leftovers, unrelated files);
-- the tests: the named tests exist and exercise the change (read them), and the focused commands pass when you rerun them yourself, since a worker's sandbox can differ from yours (Codex's has no network);
+- the tests: the named tests exist and exercise the change (read them), and the focused commands pass when you rerun them yourself, since a worker's sandbox can differ from yours (Codex's has no network, and in a linked worktree it blocks asyncio's socket-pair wakeup in some tests). For a Codex result, your rerun is the one that counts; a sandbox-only test workaround the worker needed goes in the task's ledger row;
 - the project's rules and the plan's progress-tracking rule;
 - each small decision the worker recorded: agree, or turn it into a question for the user.
 
