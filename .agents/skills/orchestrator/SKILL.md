@@ -1,6 +1,7 @@
 ---
 name: orchestrator
-description: Conductor mode for a multi-task job: plan it, split it into tasks, give each to its own background worker (Claude or Codex), check every result, and stop only for the user's decisions. Use when the user says "act as conductor", "orchestrate this", or hands over a job to run through workers, and when they change the workers ("use Codex workers until further notice", "switch the workers to Claude", "half Codex, half Claude", "pick the model by complexity").
+description: >-
+  Conductor mode for a multi-task job: plan it, split it into tasks, give each to its own background worker (Claude or Codex), check every result, and stop only for the user's decisions. Use when the user says "act as conductor", "orchestrate this", or hands over a job to run through workers, and when they change the workers ("use Codex workers until further notice", "switch the workers to Claude", "half Codex, half Claude", "pick the model by complexity").
 ---
 
 # Orchestrator
@@ -15,8 +16,8 @@ Everything that must outlive a compaction or the session sits under `.scratch/or
 
 - `workers.md`: the worker setting ([section 2](#2-the-worker-setting)), kept across runs.
 - `runs/<date>-<slug>/rules.md`: the run's shared worker rules ([section 3](#3-brief-a-worker)).
-- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then one row per task: id, title, depends on, provider and tier, worker (agent ID, or the checkout for Codex), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit.
-- `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>.txt` for each Codex worker's output.
+- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID, or background Bash task ID and Codex job ID per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit.
+- `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>-<attempt>.txt` for each Codex attempt's output.
 
 Update the ledger at every state change. After a compaction, and at the start of any session that continues a run, read `workers.md` and the open ledger before acting: they, not your recollection, say what is running.
 
@@ -88,24 +89,31 @@ A Codex worker in a linked worktree leaves the commit to you. Its sandbox writes
 Each running worker has its own checkout, made by the project's worktree rules (root `AGENTS.md`).
 
 - **Claude worker.** The Agent tool with a fresh `general-purpose` agent (a fork ignores `model`), `model` from the pin or the tier, `effort` only when one is named, and the prompt "Read and follow the brief at `<path>`. It is your whole task; report back as it says." It runs in the background. Record its agent ID.
-- **Codex worker.** A background Bash command (`run_in_background`), with the effort from the pin or the tier:
+- **Codex worker.** Find the `codex@openai-codex` entry in `~/.claude/plugins/installed_plugins.json` that matches this session's scope and project. Append `scripts/codex-companion.mjs` to its `installPath`. Check that the file exists and record its absolute path as `<companion>` in `rules.md`. If it cannot be found, hold Codex tasks and say why.
+
+  Run it in background Bash (`run_in_background`), with absolute paths and the effort from the pin or tier:
 
   ```
-  node "$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/ | sort -V | tail -1)scripts/codex-companion.mjs" task --write --effort <effort> --prompt-file <brief> --cwd <checkout> > <run>/out/<task>.txt 2>&1
+  node "<companion>" task --fresh --write --effort <effort> --prompt-file "<brief>" --cwd "<checkout>" > "<run>/out/<task>-<attempt>.txt" 2>&1
   ```
 
-  Leave off the companion's own `--background` flag: it detaches the job, and no completion notice reaches you.
+  Record Bash's background task ID immediately. Run `node "<companion>" status --cwd "<checkout>" --json` after launch. The checkout has at most one running `kind: task` job; record its `id` (`task-…`) for this attempt. If it is not listed yet, record it at the next wake-up. Each correction or retry takes the next attempt number and keeps earlier attempts' files and IDs.
+
+  Leave off the companion's own `--background` flag so Bash's notice marks completion.
 
 Independent tasks run in parallel. Tasks that share a resource besides code (a database, a running app, a port) are dependent. A dependent task starts only once its prerequisite is integrated, from the integrated head. Integrate accepted branches one at a time, the way the project merges; a branch that no longer applies cleanly goes back to its worker to rebase.
 
 ## 5. Nudge
 
-- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. Codex: the dispatch command with `--resume-last` and a prompt file of what remains, same `--cwd`; it continues the latest Codex thread this session started in that checkout, and refuses while one is still running there. A worker from an earlier session can't be resumed on either provider: start a fresh one whose brief says to continue from the branch's state.
+- **Inspect a Codex worker** for a suspected stall: `node "<companion>" status "<job-id>" --cwd "<checkout>" --json`. When a Claude session ends normally, the plugin stops only the Codex jobs in the session's own working directory. A worker in another checkout (every worktree worker), or any worker after a crash, can still be running. Look it up by its recorded ID, which also finds earlier sessions' jobs, then cancel it or let it finish.
+- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. Codex: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. For a worker from an earlier session, start fresh with a brief that continues from the branch's state.
 - **Usage limit**: wait for the reset, with a background Bash `sleep` that wakes you then, or switch provider when the mode allows (`mixed`, `auto`). In `claude` or `codex` mode, tell the user what is waiting and until when.
-- **Stall or provider error** (a crash, a network failure, garbled output; or, noticed when something else wakes you, a worker far past its expected time whose output stopped growing): stop it and rerun the task with a fresh worker on the same tier.
+- **Stall or provider error** (a crash, network failure, garbled output, or a worker far past its expected time with no new output): stop it and rerun with a fresh worker on the same tier. For Codex, cancel with `node "<companion>" cancel "<job-id>" --cwd "<checkout>" --json`: stopping Bash alone can leave the shared Codex background process working in the checkout. Confirm with `status` before replacing it.
 - **Fails its checks after one correction round**: a fresh worker one tier up, given the brief plus what went wrong. Already at frontier: a fresh frontier worker on the other provider when the mode allows; otherwise the user decides.
 
 ## 6. Check a result
+
+Read Codex's launch output first. If its report is missing, retrieve the stored report or failure with `node "<companion>" result "<job-id>" --cwd "<checkout>" --json`.
 
 You are the reviewer. The worker's report is a claim; the checkout is the evidence. A worker's own model is never the only check of its work. In the worker's checkout, check:
 
