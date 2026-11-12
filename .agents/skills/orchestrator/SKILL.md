@@ -16,7 +16,7 @@ Everything that must outlive a compaction or the session sits under `.scratch/or
 
 - `workers.md`: the worker setting ([section 2](#2-the-worker-setting)), kept across runs.
 - `runs/<date>-<slug>/rules.md`: the run's shared worker rules ([section 3](#3-brief-a-worker)).
-- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID, or background Bash task ID and Codex job ID per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit.
+- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID, or background Bash task ID and Codex job ID per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit, Codex runtime cleanup (pending, stopped, or skipped with reason).
 - `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>-<attempt>.txt` for each Codex attempt's output.
 
 Update the ledger at every state change. After a compaction, and at the start of any session that continues a run, read `workers.md` and the open ledger before acting: they, not your recollection, say what is running.
@@ -89,7 +89,7 @@ A Codex worker in a linked worktree leaves the commit to you. Its sandbox writes
 Each running worker has its own checkout, made by the project's worktree rules (root `AGENTS.md`).
 
 - **Claude worker.** The Agent tool with a fresh `general-purpose` agent (a fork ignores `model`), `model` from the pin or the tier, `effort` only when one is named, and the prompt "Read and follow the brief at `<path>`. It is your whole task; report back as it says." It runs in the background. Record its agent ID.
-- **Codex worker.** Find the `codex@openai-codex` entry in `~/.claude/plugins/installed_plugins.json` that matches this session's scope and project. Append `scripts/codex-companion.mjs` to its `installPath`. Check that the file exists and record its absolute path as `<companion>` in `rules.md`. If it cannot be found, hold Codex tasks and say why.
+- **Codex worker.** Find the `codex@openai-codex` entry in `~/.claude/plugins/installed_plugins.json` that matches this session's scope and project. Append `scripts/codex-companion.mjs` to its `installPath`. Check that the file exists and record its absolute path as `<companion>` in `rules.md`. If it cannot be found, hold Codex tasks and say why. Resolve [scripts/cleanup-codex-companion.py](scripts/cleanup-codex-companion.py) relative to this skill's directory and record its absolute path as `<cleanup>` there too.
 
   Run it in background Bash (`run_in_background`), with absolute paths and the effort from the pin or tier:
 
@@ -126,6 +126,22 @@ You are the reviewer. The worker's report is a claim; the checkout is the eviden
 Any review the project's route requires for this work also runs, as a worker's task. Routine defects go back to the same worker as a numbered list; material ones go to the user. Then integrate, update the ledger, and dispatch whatever the integration unblocked.
 
 Done when: every hunk is read, the focused tests pass on your rerun, and the ledger row says accepted.
+
+### Release finished Codex runtimes
+
+The parent conductor owns this cleanup. Companion 1.0.6 can keep completed threads and their MCP/REPL helpers loaded after the worker exits. A worker's final answer, a Bash exit, or `cancel` alone does not release the shared broker.
+
+After collecting the result and accepting a Codex task, clean its checkout before dispatching more work and before removing its worktree; a worktree already removed is cleaned by its old path. Also clean a cancelled or failed attempt once its failure is recorded and you have decided to replace it with a fresh worker. Keep the runtime while planning to use `--resume-last`, while a correction or approval is pending, or when the user wants a background service to keep running.
+
+Run from the parent on the host, using this skill's helper:
+
+```
+python3 "<cleanup>" --workspace "<checkout>" --execute
+```
+
+This inspects only that checkout. It checks the broker's process identity, saved terminal job results, idle/error thread status, connected clients, and descendant helpers before sending `broker/shutdown`. It leaves saved results and conversation files in place and checks that the original process tree exited. The plugin starts a new broker on the next task. Omitting `--execute` performs a dry-run. The helper is Linux-only (it reads `/proc` and `ss`); on another OS it reports `skipped`, and the runtime lasts until the session ends.
+
+Record `stopped` or `not-running` in the ledger. On `skipped` or `incomplete` (exit 2), record the reason; do not replace this with `pkill`, a global process kill, or repeated polling. Revisit it once at a later natural wake-up if the reason has cleared. Do not start another task in the same checkout during cleanup. If another session shares that checkout, coordinate with it first; the broker's shutdown RPC has no atomic idle check. Run the helper once per releasable Codex checkout again before closing a run or handing it back to the user, and mention any runtimes left active or skipped.
 
 ## 7. Ask the user
 
