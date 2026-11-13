@@ -21,7 +21,7 @@ Steps 1 to 7 write run files and, in step 7, the design documents. Code comes af
 ## 1. Choose the process tier
 
 - **Full** for high-risk designs (the project's risk rule; without one: persistent state, broker orders or events, state shared across threads, money and price maths), cross-module seams and data-model changes.
-- **Light** for designs that mostly move code. Steps 2 and 3 run with one proposer, from the provider the worker setting picks. A worker of the other provider then critiques that proposal once, read-only on the same commit, given the brief and the proposal: every point it would change, with evidence. Save the critique as `critique.md` beside the proposal. In place of steps 4 and 5, log every section of the proposal: what the critique leaves standing as `agreed`, each critique point as open. Steps 6 and 7 follow as written.
+- **Light** for designs that mostly move code. Steps 2 and 3 run with one proposer, from the provider the worker setting picks. A worker of the other provider then critiques that proposal once, read-only on the same commit, given the brief and the proposal: every point it would change, with evidence. Save the critique as `critique.md` beside the proposal. In place of steps 4 and 5, log every section of the proposal: what the critique leaves standing as `agreed`, each critique point as open. A critique point that would change persistent state, broker orders or events, or state shared across threads goes through step 5's rounds before step 6, with the proposer and the critic as the two sides; a Codex critic then keeps its checkout through those rounds, as step 3 asks of a Codex proposer. Steps 6 and 7 follow as written.
 
 Done when the ledger records the tier of every group in the run.
 
