@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: >-
-  Conductor mode for a multi-task job: plan it, split it into tasks, give each to its own background worker (Claude or Codex), check every result, and stop only for the user's decisions. Use when the user says "act as conductor", "orchestrate this", or hands over a job to run through workers, and when they change the workers ("use Codex workers until further notice", "switch the workers to Claude", "half Codex, half Claude", "pick the model by complexity").
+  Conductor mode for a multi-task job: plan it, split it into tasks, give each to its own background worker (Claude, Codex or DeepSeek), check every result, and stop only for the user's decisions. Use when the user says "act as conductor", "orchestrate this", or hands over a job to run through workers, and when they change the workers ("use Codex workers until further notice", "switch the workers to Claude", "half Codex, half Claude", "give DeepSeek a third", "pick the model by complexity").
 ---
 
 # Orchestrator
@@ -16,8 +16,8 @@ Everything that must outlive a compaction or the session sits under `.scratch/or
 
 - `workers.md`: the worker setting ([section 2](#2-the-worker-setting)), kept across runs.
 - `runs/<date>-<slug>/rules.md`: the run's shared worker rules ([section 3](#3-brief-a-worker)).
-- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID, or background Bash task ID and Codex job ID per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit, Codex runtime cleanup (pending, stopped, or skipped with reason).
-- `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>-<attempt>.txt` for each Codex attempt's output.
+- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID; background Bash task ID plus Codex job ID or DeepSeek session ID per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit, Codex runtime cleanup (pending, stopped, or skipped with reason).
+- `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>-<attempt>.txt` for each Codex attempt's output (`.json` for DeepSeek).
 
 Update the ledger at every state change. After a compaction, and at the start of any session that continues a run, read `workers.md` and the open ledger before acting: they, not your recollection, say what is running.
 
@@ -39,6 +39,8 @@ mode: mixed
 codex_share: 30%
 claude: sonnet, effort high
 codex: effort high (model from ~/.codex/config.toml)
+deepseek_share: 20%
+deepseek: compact window 300000
 set: <date>, "<the user's words>"
 ```
 
@@ -46,16 +48,17 @@ set: <date>, "<the user's words>"
 | --- | --- |
 | `claude` | every task to a Claude worker |
 | `codex` | every task to a Codex worker |
-| `mixed` | `codex_share` of the tasks to Codex; keep the run's tally near it |
-| `auto` | per task, the tier from complexity and risk, the provider by fit and by spreading load across both quotas |
+| `deepseek` | every task to a DeepSeek worker |
+| `mixed` | `codex_share` and `deepseek_share` of the tasks to those providers, the rest to Claude; keep the run's tally near them |
+| `auto` | per task, the tier from complexity and risk, the provider by fit and by spreading load across the quotas |
 
-| Tier | For | Claude `model` | Codex `--effort` |
-| --- | --- | --- | --- |
-| small and fast | mechanical edits, renames, a document change along a pattern | e.g. `haiku` | `low` |
-| mid | ordinary feature work along an existing pattern, with its tests | e.g. `sonnet` | `medium` |
-| frontier | high-risk work as the project defines it (else: persistent state, concurrency, orders or money, external side effects), cross-module design, hard bugs | e.g. `opus`; `fable` when the user names it | `xhigh` |
+| Tier | For | Claude `model` | Codex `--effort` | DeepSeek `--effort` |
+| --- | --- | --- | --- | --- |
+| small and fast | mechanical edits, renames, a document change along a pattern | e.g. `haiku` | `low` | `low` |
+| mid | ordinary feature work along an existing pattern, with its tests | e.g. `sonnet` | `medium` | `medium` |
+| frontier | high-risk work as the project defines it (else: persistent state, concurrency, orders or money, external side effects), cross-module design, hard bugs | e.g. `opus`; `fable` when the user names it | `xhigh` | `high` |
 
-Every mode except `auto` uses the frontier tier. A provider's pin in `workers.md` overrides the tier for that provider on every task. The Agent tool's `effort` goes out only when `workers.md` or the user names one. The Codex model comes from `~/.codex/config.toml`; pass `--model` only when `workers.md` or the user names one.
+DeepSeek is the budget provider: in `mixed` and `auto`, give it the small and mid tasks first, and frontier tasks only when `workers.md` or the user says so. Every mode except `auto` uses the frontier tier. A provider's pin in `workers.md` overrides the tier for that provider on every task. The Agent tool's `effort` goes out only when `workers.md` or the user names one. The Codex model comes from `~/.codex/config.toml`; pass `--model` only when `workers.md` or the user names one.
 
 The user changes the setting in plain words at any time ("we're low on Claude, use Codex agents until further notice", "back to Claude", "half and half", "decide the model from complexity"). Rewrite `workers.md` at once with their words and the date, confirm in one line, and apply it from the next dispatch; running workers finish where they are unless the user says otherwise. The setting stands until the user changes it. Read the file before every dispatch.
 
@@ -100,20 +103,27 @@ Each running worker has its own checkout, made by the project's worktree rules (
   Record Bash's background task ID immediately. Run `node "<companion>" status --cwd "<checkout>" --json` after launch. The checkout has at most one running `kind: task` job; record its `id` (`task-…`) for this attempt. If it is not listed yet, record it at the next wake-up. Each correction or retry takes the next attempt number and keeps earlier attempts' files and IDs.
 
   Leave off the companion's own `--background` flag so Bash's notice marks completion.
+- **DeepSeek worker.** Headless Claude Code on DeepSeek through OpenRouter, via [scripts/deepseek-worker.sh](scripts/deepseek-worker.sh); record its absolute path as `<deepseek>` in `rules.md`. It reads the OpenRouter key from `OPENROUTER_API_KEY` or `~/.config/openrouter/api_key`; with neither, hold DeepSeek tasks and say why. Run it in background Bash, with the effort from the pin or tier and the compact window from `workers.md` (default 300000 tokens):
+
+  ```
+  "<deepseek>" --brief "<brief>" --cwd "<checkout>" --effort <effort> --compact-window <tokens> > "<run>/out/<task>-<attempt>.json" 2> "<run>/out/<task>-<attempt>.err"
+  ```
+
+  Record Bash's background task ID. The worker has the full Claude Code toolset and commits itself, like a Claude worker. Its `.json` file is one object; record its `session_id` in the ledger row. Its `total_cost_usd` is Claude Code's guess at Claude prices for an unknown model, about six times the real figure; the real spend is the change in `usage` from `GET https://openrouter.ai/api/v1/key` with the key as Bearer token.
 
 Independent tasks run in parallel. Tasks that share a resource besides code (a database, a running app, a port) are dependent. A dependent task starts only once its prerequisite is integrated, from the integrated head. Integrate accepted branches one at a time, the way the project merges; a branch that no longer applies cleanly goes back to its worker to rebase.
 
 ## 5. Nudge
 
 - **Inspect a Codex worker** for a suspected stall: `node "<companion>" status "<job-id>" --cwd "<checkout>" --json`. When a Claude session ends normally, the plugin stops only the Codex jobs in the session's own working directory. A worker in another checkout (every worktree worker), or any worker after a crash, can still be running. Look it up by its recorded ID, which also finds earlier sessions' jobs, then cancel it or let it finish.
-- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. Codex: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. For a worker from an earlier session, start fresh with a brief that continues from the branch's state.
+- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. Codex: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. DeepSeek: rerun the dispatch command with `--resume <session_id>`, a brief of what remains, and the same `--cwd`. For a worker from an earlier session, start fresh with a brief that continues from the branch's state.
 - **Usage limit**: wait for the reset, with a background Bash `sleep` that wakes you then, or switch provider when the mode allows (`mixed`, `auto`). In `claude` or `codex` mode, tell the user what is waiting and until when.
-- **Stall or provider error** (a crash, network failure, garbled output, or a worker far past its expected time with no new output): stop it and rerun with a fresh worker on the same tier. For Codex, cancel with `node "<companion>" cancel "<job-id>" --cwd "<checkout>" --json`: stopping Bash alone can leave the shared Codex background process working in the checkout. Confirm with `status` before replacing it.
+- **Stall or provider error** (a crash, network failure, garbled output, or a worker far past its expected time with no new output): stop it and rerun with a fresh worker on the same tier. For Codex, cancel with `node "<companion>" cancel "<job-id>" --cwd "<checkout>" --json`: stopping Bash alone can leave the shared Codex background process working in the checkout. Confirm with `status` before replacing it. For DeepSeek, stopping the background Bash task stops the worker.
 - **Fails its checks after one correction round**: a fresh worker one tier up, given the brief plus what went wrong. Already at frontier: a fresh frontier worker on the other provider when the mode allows; otherwise the user decides.
 
 ## 6. Check a result
 
-Read Codex's launch output first. If its report is missing, retrieve the stored report or failure with `node "<companion>" result "<job-id>" --cwd "<checkout>" --json`.
+Read DeepSeek's output JSON first: `is_error` and `result`. Read Codex's launch output first. If its report is missing, retrieve the stored report or failure with `node "<companion>" result "<job-id>" --cwd "<checkout>" --json`.
 
 You are the reviewer. The worker's report is a claim; the checkout is the evidence. A worker's own model is never the only check of its work. In the worker's checkout, check:
 
