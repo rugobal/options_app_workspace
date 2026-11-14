@@ -71,7 +71,7 @@ A worker knows nothing of this conversation, so the brief is self-contained: wit
 `rules.md` carries what every brief of the run shares, so each brief stays short:
 
 - the project rules to read: each touched repo's `AGENTS.md`, and the plan's route as found in step 1.2;
-- the test rules: focused test commands, and what tests must never touch (live services, real data);
+- the test rules: each task runs only its focused tests, the files holding its changed or new tests plus one or two files that test the changed functions directly (typically 2-6 files), each run once; the whole suite runs once, after every implementation task of the spec is done; and what tests must never touch (live services, real data);
 - the **decision gate**: resolve small discrepancies and record each one in the report; stop at a material question (behaviour the user would notice, a change of scope, a contradiction in the spec, anything irreversible or outside the checkout) and report it with options and a recommendation;
 - the commit rules: message format and attribution lines;
 - the report: branch and commit hash, files touched, tests run with their commands and results, decisions made, open questions, what remains.
@@ -81,7 +81,7 @@ Each brief names:
 - the goal, and the scope: what is in, what is out;
 - the checkout path and branch;
 - "Read `<path to rules.md>` first";
-- the task's tests: which to write, which to run;
+- the task's tests: which to write, and its focused file list to run, each file named;
 - the commit expected, with its message;
 - what it needs from earlier tasks: commit hashes, decisions.
 
@@ -129,7 +129,7 @@ You are the reviewer. The worker's report is a claim; the checkout is the eviden
 
 - the branch and commit: the brief's branch, a clean tree, the briefed commit and message (a Codex worker in a linked worktree: its changes in the checkout and its message file, committed by you once every check passes);
 - the diff against the brief: read every hunk; each goal met, nothing outside the scope, no stray churn (formatting, lockfiles, debug leftovers, unrelated files);
-- the tests: the named tests exist and exercise the change (read them), and the focused commands pass when you rerun them yourself, since a worker's sandbox can differ from yours (Codex's has no network, and in a linked worktree it blocks asyncio's socket-pair wakeup in some tests). For a Codex result, your rerun is the one that counts; a sandbox-only test workaround the worker needed goes in the task's ledger row;
+- the tests: the named tests exist and exercise the change (read them), and the focused commands pass when you rerun them yourself on the brief's same file list, since a worker's sandbox can differ from yours (Codex's has no network, and in a linked worktree it blocks asyncio's socket-pair wakeup in some tests). For a Codex result, your rerun is the one that counts; a sandbox-only test workaround the worker needed goes in the task's ledger row. The whole suite runs once, when every task of the spec is done;
 - the project's rules and the plan's progress-tracking rule;
 - each small decision the worker recorded: agree, or turn it into a question for the user.
 
