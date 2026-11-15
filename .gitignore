@@ -23,3 +23,6 @@
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+# Impeccable engine binary (fetched by its launcher on first run)
+/.agents/skills/impeccable/scripts/bin/
