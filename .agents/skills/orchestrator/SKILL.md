@@ -14,12 +14,13 @@ With workers running and nothing left to plan or brief, end your turn: each Agen
 
 Everything that must outlive a compaction or the session sits under `.scratch/orchestrator/` at the workspace root, which the root `.gitignore` ignores (`/.scratch/`), so none of it is committed:
 
+- `standing-instructions.md`: the user's lasting instructions on how you work, kept across runs. Worker choices live in `workers.md`, never here. When the user gives a new lasting instruction, rewrite the matching item with their words and the date, as for `workers.md`.
 - `workers.md`: the worker setting ([section 2](#2-the-worker-setting)), kept across runs.
 - `runs/<date>-<slug>/rules.md`: the run's shared worker rules ([section 3](#3-brief-a-worker)).
-- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID; background Bash task ID plus Codex job ID or DeepSeek session ID per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit, Codex runtime cleanup (pending, stopped, or skipped with reason).
+- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then a `session started <time>` line per session continuing the run and a `context compacted` line after each compaction, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID; background Bash task ID plus Codex job ID or DeepSeek session ID per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit, Codex runtime cleanup (pending, stopped, or skipped with reason).
 - `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>-<attempt>.txt` for each Codex attempt's output (`.json` for DeepSeek).
 
-Update the ledger at every state change. After a compaction, and at the start of any session that continues a run, read `workers.md` and the open ledger before acting: they, not your recollection, say what is running.
+Update the ledger at every state change. After a compaction, and at the start of any session that continues a run, record `context compacted` or `session started <time>`, then read `standing-instructions.md`, `workers.md` and the open ledger before acting: they, not your recollection, say how to work and what is running.
 
 ## 1. Plan the run
 
@@ -133,7 +134,7 @@ You are the reviewer. The worker's report is a claim; the checkout is the eviden
 - the project's rules and the plan's progress-tracking rule;
 - each small decision the worker recorded: agree, or turn it into a question for the user.
 
-Any review the project's route requires for this work also runs, as a worker's task. Routine defects go back to the same worker as a numbered list; material ones go to the user. Then integrate, update the ledger, and dispatch whatever the integration unblocked.
+Any review the project's route requires for this work also runs, as a worker's task. Routine defects go back to the same worker as a numbered list; material ones go to the user. Then integrate and update the ledger. After each integration, and after each compaction, check the handoff triggers: when one holds, follow the [orchestrator-handoff](../orchestrator-handoff/SKILL.md) skill instead of dispatching again. Otherwise dispatch whatever the integration unblocked.
 
 Done when: every hunk is read, the focused tests pass on your rerun, and the ledger row says accepted.
 
