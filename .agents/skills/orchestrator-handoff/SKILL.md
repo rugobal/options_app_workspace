@@ -48,9 +48,9 @@ Done when: a conductor holding this file and the files it names can take the nex
 
 ## 4. Clean up
 
-Release each Codex runtime with the cleanup helper (orchestrator §6, "Release finished Codex runtimes"). Remove the worktrees of integrated tasks. Leave the run open when work remains.
+Release each Codex runtime with the cleanup helper (orchestrator §6, "Release finished Codex runtimes"), and stop any leftover Antigravity scope (orchestrator §6, "Check Antigravity scopes"). Remove the worktrees of integrated tasks. Leave the run open when work remains.
 
-Done when: the ledger records a runtime result for every Codex checkout, and no integrated task's worktree remains.
+Done when: the ledger records a runtime result for every Codex checkout, no `antigravity-worker-*` scope is listed, and no integrated task's worktree remains.
 
 ## 5. Write the next session's prompt
 

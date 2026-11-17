@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: >-
-  Conductor mode for a multi-task job: plan it, split it into tasks, give each to its own background worker (Claude, Codex or DeepSeek), check every result, and stop only for the user's decisions. Use when the user says "act as conductor", "orchestrate this", or hands over a job to run through workers, and when they change the workers ("use Codex workers until further notice", "switch the workers to Claude", "half Codex, half Claude", "give DeepSeek a third", "pick the model by complexity").
+  Conductor mode for a multi-task job: plan it, split it into tasks, give each to its own background worker (Claude, Codex, DeepSeek or Gemini through Antigravity), check every result, and stop only for the user's decisions. Use when the user says "act as conductor", "orchestrate this", or hands over a job to run through workers, and when they change the workers ("use Codex workers until further notice", "switch the workers to Claude", "half Codex, half Claude", "give DeepSeek a third", "add Gemini through Antigravity", "pick the model by complexity").
 ---
 
 # Orchestrator
@@ -17,8 +17,8 @@ Everything that must outlive a compaction or the session sits under `.scratch/or
 - `standing-instructions.md`: the user's lasting instructions on how you work, kept across runs. Worker choices live in `workers.md`, never here. When the user gives a new lasting instruction, rewrite the matching item with their words and the date, as for `workers.md`.
 - `workers.md`: the worker setting ([section 2](#2-the-worker-setting)), kept across runs.
 - `runs/<date>-<slug>/rules.md`: the run's shared worker rules ([section 3](#3-brief-a-worker)).
-- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then a `session started <time>` line per session continuing the run and a `context compacted` line after each compaction, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID; background Bash task ID plus Codex job ID or DeepSeek session ID per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit, Codex runtime cleanup (pending, stopped, or skipped with reason).
-- `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>-<attempt>.txt` for each Codex attempt's output (`.json` for DeepSeek).
+- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then a `session started <time>` line per session continuing the run and a `context compacted` line after each compaction, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID; background Bash task ID plus Codex job ID, DeepSeek session ID or Antigravity conversation ID and scope per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit, Codex runtime cleanup (pending, stopped, or skipped with reason).
+- `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>-<attempt>.txt` for each Codex attempt's output (`.json` for DeepSeek and Antigravity).
 
 Update the ledger at every state change. After a compaction, and at the start of any session that continues a run, record `context compacted` or `session started <time>`, then read `standing-instructions.md`, `workers.md` and the open ledger before acting: they, not your recollection, say how to work and what is running.
 
@@ -42,6 +42,8 @@ claude: sonnet, effort high
 codex: effort high (model from ~/.codex/config.toml)
 deepseek_share: 20%
 deepseek: compact window 300000
+antigravity_share: 10%
+antigravity: model gemini-4-argon, effort high
 set: <date>, "<the user's words>"
 ```
 
@@ -50,14 +52,15 @@ set: <date>, "<the user's words>"
 | `claude` | every task to a Claude worker |
 | `codex` | every task to a Codex worker |
 | `deepseek` | every task to a DeepSeek worker |
-| `mixed` | `codex_share` and `deepseek_share` of the tasks to those providers, the rest to Claude; keep the run's tally near them |
+| `antigravity` | every task to an Antigravity worker |
+| `mixed` | `codex_share`, `deepseek_share` and `antigravity_share` of the tasks to those providers, the rest to Claude; keep the run's tally near them |
 | `auto` | per task, the tier from complexity and risk, the provider by fit and by spreading load across the quotas |
 
-| Tier | For | Claude `model` | Codex `--effort` | DeepSeek `--effort` |
-| --- | --- | --- | --- | --- |
-| small and fast | mechanical edits, renames, a document change along a pattern | e.g. `haiku` | `low` | `low` |
-| mid | ordinary feature work along an existing pattern, with its tests | e.g. `sonnet` | `medium` | `medium` |
-| frontier | high-risk work as the project defines it (else: persistent state, concurrency, orders or money, external side effects), cross-module design, hard bugs | e.g. `opus`; `fable` when the user names it | `xhigh` | `high` |
+| Tier | For | Claude `model` | Codex `--effort` | DeepSeek `--effort` | Antigravity `--model`, `--effort` |
+| --- | --- | --- | --- | --- | --- |
+| small and fast | mechanical edits, renames, a document change along a pattern | e.g. `haiku` | `low` | `low` | `gemini-3.8-flash`, `low` |
+| mid | ordinary feature work along an existing pattern, with its tests | e.g. `sonnet` | `medium` | `medium` | `gemini-3.8-flash`, `medium` |
+| frontier | high-risk work as the project defines it (else: persistent state, concurrency, orders or money, external side effects), cross-module design, hard bugs | e.g. `opus`; `fable` when the user names it | `xhigh` | `high` | `gemini-4-argon`, `high` |
 
 DeepSeek is the budget provider: in `mixed` and `auto`, give it the small and mid tasks first, and frontier tasks only when `workers.md` or the user says so. Every mode except `auto` uses the frontier tier. A provider's pin in `workers.md` overrides the tier for that provider on every task. The Agent tool's `effort` goes out only when `workers.md` or the user names one. The Codex model comes from `~/.codex/config.toml`; pass `--model` only when `workers.md` or the user names one.
 
@@ -111,20 +114,27 @@ Each running worker has its own checkout, made by the project's worktree rules (
   ```
 
   Record Bash's background task ID. The worker has the full Claude Code toolset and commits itself, like a Claude worker. Its `.json` file is one object; record its `session_id` in the ledger row. Its `total_cost_usd` is Claude Code's guess at Claude prices for an unknown model, about six times the real figure; the real spend is the change in `usage` from `GET https://openrouter.ai/api/v1/key` with the key as Bearer token.
+- **Antigravity worker.** Google's Gemini through the Antigravity CLI (`agy`) in print mode, via [scripts/antigravity-worker.sh](scripts/antigravity-worker.sh); record its absolute path as `<antigravity>` in `rules.md`. It needs `agy` signed in (`agy models` lists the model ids). The checkout must sit inside agy's trusted workspaces (`~/.gemini/antigravity-cli/settings.json`): outside them agy quietly works in its own scratch folder, so the wrapper refuses. When either is missing, hold Antigravity tasks and say why. Run it in background Bash, with the model and effort from the pin or tier. The wrapper's defaults are the frontier pair, `gemini-4-argon` at `high`. Each model offers only some efforts; `agy models` lists the pairs.
+
+  ```
+  "<antigravity>" --brief "<brief>" --cwd "<checkout>" --model <model> --effort <effort> > "<run>/out/<task>-<attempt>.json" 2> "<run>/out/<task>-<attempt>.err"
+  ```
+
+  Record Bash's background task ID, and the systemd scope named on the `.err` file's first line. The brief goes in as the prompt itself, so keep it under 120000 characters. The worker runs with every tool approved and commits itself, like a DeepSeek worker. On Argon it takes the same frontier work as Claude and Codex workers. Its `.json` file is one object; record its `conversation_id`. The wrapper's `--timeout` (default `3h`) is agy's own print-mode limit. agy and every process the worker starts run in that scope, and the wrapper stops the scope when agy exits or the wrapper is stopped, so nothing the worker started outlives it and its memory is released. Docker containers belong to dockerd, outside the scope: tests remove their own.
 
 Independent tasks run in parallel. Tasks that share a resource besides code (a database, a running app, a port) are dependent. A dependent task starts only once its prerequisite is integrated, from the integrated head. Integrate accepted branches one at a time, the way the project merges; a branch that no longer applies cleanly goes back to its worker to rebase.
 
 ## 5. Nudge
 
 - **Inspect a Codex worker** for a suspected stall: `node "<companion>" status "<job-id>" --cwd "<checkout>" --json`. When a Claude session ends normally, the plugin stops only the Codex jobs in the session's own working directory. A worker in another checkout (every worktree worker), or any worker after a crash, can still be running. Look it up by its recorded ID, which also finds earlier sessions' jobs, then cancel it or let it finish.
-- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. Codex: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. DeepSeek: rerun the dispatch command with `--resume <session_id>`, a brief of what remains, and the same `--cwd`. For a worker from an earlier session, start fresh with a brief that continues from the branch's state.
+- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. Codex: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. DeepSeek: rerun the dispatch command with `--resume <session_id>`, a brief of what remains, and the same `--cwd`. Antigravity: the same, with `--resume <conversation_id>`. For a worker from an earlier session, start fresh with a brief that continues from the branch's state.
 - **Usage limit**: wait for the reset, with a background Bash `sleep` that wakes you then, or switch provider when the mode allows (`mixed`, `auto`). In `claude` or `codex` mode, tell the user what is waiting and until when.
-- **Stall or provider error** (a crash, network failure, garbled output, or a worker far past its expected time with no new output): stop it and rerun with a fresh worker on the same tier. For Codex, cancel with `node "<companion>" cancel "<job-id>" --cwd "<checkout>" --json`: stopping Bash alone can leave the shared Codex background process working in the checkout. Confirm with `status` before replacing it. For DeepSeek, stopping the background Bash task stops the worker.
+- **Stall or provider error** (a crash, network failure, garbled output, or a worker far past its expected time with no new output): stop it and rerun with a fresh worker on the same tier. For Codex, cancel with `node "<companion>" cancel "<job-id>" --cwd "<checkout>" --json`: stopping Bash alone can leave the shared Codex background process working in the checkout. Confirm with `status` before replacing it. For DeepSeek, stopping the background Bash task stops the worker. For Antigravity, stopping it makes the wrapper stop its scope; when the wrapper was killed outright, stop the scope by its recorded name: `systemctl --user stop <scope>`.
 - **Fails its checks after one correction round**: a fresh worker one tier up, given the brief plus what went wrong. Already at frontier: a fresh frontier worker on the other provider when the mode allows; otherwise the user decides.
 
 ## 6. Check a result
 
-Read DeepSeek's output JSON first: `is_error` and `result`. Read Codex's launch output first. If its report is missing, retrieve the stored report or failure with `node "<companion>" result "<job-id>" --cwd "<checkout>" --json`.
+Read DeepSeek's output JSON first: `is_error` and `result`. Read Antigravity's first: `status` (`SUCCESS` or `ERROR`), `error` and `response`. Read Codex's launch output first. If its report is missing, retrieve the stored report or failure with `node "<companion>" result "<job-id>" --cwd "<checkout>" --json`.
 
 You are the reviewer. The worker's report is a claim; the checkout is the evidence. A worker's own model is never the only check of its work. In the worker's checkout, check:
 
@@ -153,6 +163,10 @@ python3 "<cleanup>" --workspace "<checkout>" --execute
 This inspects only that checkout. It checks the broker's process identity, saved terminal job results, idle/error thread status, connected clients, and descendant helpers before sending `broker/shutdown`. It leaves saved results and conversation files in place and checks that the original process tree exited. The plugin starts a new broker on the next task. Omitting `--execute` performs a dry-run. The helper is Linux-only (it reads `/proc` and `ss`); on another OS it reports `skipped`, and the runtime lasts until the session ends.
 
 Record `stopped` or `not-running` in the ledger. On `skipped` or `incomplete` (exit 2), record the reason; do not replace this with `pkill`, a global process kill, or repeated polling. Revisit it once at a later natural wake-up if the reason has cleared. Do not start another task in the same checkout during cleanup. If another session shares that checkout, coordinate with it first; the broker's shutdown RPC has no atomic idle check. Run the helper once per releasable Codex checkout again before closing a run or handing it back to the user, and mention any runtimes left active or skipped.
+
+### Check Antigravity scopes
+
+An Antigravity worker releases its processes and memory when its wrapper stops its scope, so a scope that outlives its worker is the one leak to look for. After collecting an Antigravity result, and again before closing a run or handing it back, run `systemctl --user list-units --all 'antigravity-worker-*' --no-legend`. Stop each listed scope that no running worker of yours owns, by name (`systemctl --user stop <scope>`). Then record `stopped` in the cleanup column of the task's ledger row, or `clean` when nothing was listed.
 
 ## 7. Ask the user
 
