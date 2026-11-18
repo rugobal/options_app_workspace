@@ -172,6 +172,14 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
      <common git dir>/logs
      --add-dir
      <run>/out/<id>
+     -c
+     plugins={"mongodb@mongodb-plugins"={enabled=false},"unified-computer-use@openai-bundled"={enabled=false}}
+     -c
+     mcp_servers.tauri.enabled=false
+     -c
+     mcp_servers.node_repl.enabled=false
+     -c
+     features.apps=false
      ```
 
      `<git dir>` is the worktree's own Git folder, `git -C "<checkout>" rev-parse --path-format=absolute --git-dir`, and `<common git dir>` the same with `--git-common-dir`. With those writable the builder runs `git add` and `git commit` in a linked worktree and commits itself, like a Claude worker; the repo's config and hooks stay read-only, and it has no network, as in mode A. Read-only reviewer, its TOML quotes part of the values:
@@ -187,9 +195,28 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
      default_permissions="reviewer"
      -c
      permissions.reviewer.filesystem={":root"="read","<run>/out/<id>"="write"}
+     -c
+     plugins={"mongodb@mongodb-plugins"={enabled=false},"unified-computer-use@openai-bundled"={enabled=false}}
+     -c
+     mcp_servers.tauri.enabled=false
+     -c
+     mcp_servers.node_repl.enabled=false
+     -c
+     features.apps=false
      ```
 
-     It reads everything, runs read-only commands, and writes only in `<run>/out/<id>`. The profile is its whole sandbox: a `--sandbox` flag would replace it. Both sandboxes hold shell commands only: the MCP servers from the user's Codex config and plugins run outside them with the user's network and files, and under `never` each tool marked read-only, or marked both not destructive and closed-world, runs without approval.
+     It reads everything, runs read-only commands, and writes only in `<run>/out/<id>`. The profile is its whole sandbox: a `--sandbox` flag would replace it.
+
+     Both sandboxes hold shell commands only: an MCP server runs outside them with the user's network and files. So both recipes end with the lines that turn off every MCP server and connector of the user's Codex (the owner's decision, 2026-11-18). Those lines name the servers and plugins of the user's Codex config, so one added there later needs a line of its own. Once per run, check the first Codex worker after `start` or `ready` exits 0 and before its first prompt; `/mcp` opens no turn: `herdr agent prompt "<agent_name>" "/mcp"` (`agent_name` from `start`'s JSON), then, about 3 s later, `herdr agent read "<agent_name>" --source visible`. Every server listed must read `disabled`, except `codex_tui` and a server the worker's own args give back (below), which lists only the tools its `enabled_tools` names; when another one doesn't, close the worker and stop for the user. `codex_tui` is the Codex screen's own (12 tools on the user's Codex threads and worktrees) and has no off switch.
+
+     A task that needs one of these servers gets it back in its own args, limited to the tools the task needs. A config server: replace its `enabled=false` line with `mcp_servers.<server>.enabled_tools=["<tool>"]`. A plugin's server: in the `plugins=` line, replace that plugin's `{enabled=false}` with `{mcp_servers={<server>={enabled_tools=["<tool>"]}}}`. Under `never`, Codex refuses a tool unless it is marked read-only, or marked both not destructive and closed-world. Approve a refused tool the task needs for that worker alone, one tool at a time, never the whole server:
+
+     ```
+     -c
+     mcp_servers.<server>.tools.<tool>.approval_mode="approve"
+     ```
+
+     For a plugin's server, put `tools={<tool>={approval_mode="approve"}}` beside its `enabled_tools`.
    - Pi: `--model`, `openrouter/<the DeepSeek model>` (`openrouter/deepseek/deepseek-v4.1-flash-1017` unless `workers.md` names another), `--thinking`, `<effort>`. Pi starts with the user's own extensions, packages, skills and MCP servers, as the user's own Pi sessions do, because the linters and other tools help the worker (the owner's decision, 2026-11-18); Herdr's state extension is among them, which is how Herdr tracks the agent's state. A Pi worker can therefore reach what those extensions reach, for example the user's Telegram ask extension, so its brief says not to contact the user and to put questions in its report.
    - Antigravity: `--model`, `<model>`, `--effort`, `<effort>`; the checkout must be trusted, as above.
 2. `"<herdr-worker>" start --run "<run>" --id <id> --label "<label>" --cwd "<checkout>" --kind claude|codex|pi|agy --args-file "<run>/out/<id>.args" --report "<run>/out/<id>/report.md"`, plus the `--env` items; `start` creates the report's folder. It returns when the agent is ready (0), at a dialog (5, the screen in `screen`), or not ready yet (3: run `"<herdr-worker>" ready --run "<run>" --id <id>`, which exits the same way).

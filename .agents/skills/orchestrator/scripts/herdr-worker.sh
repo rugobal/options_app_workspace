@@ -36,10 +36,12 @@
 #   composer (a draft, the history search, a menu, a pane too narrow for the footer hints, a failed
 #   read) is 3, and nothing is sent. After a dialog Codex shows idle, then working while it finishes
 #   starting, so start and ready count the composer once Herdr has shown no work for 3 s and a fresh
-#   read still finds it, before the deadline. Mode B Codex runs no companion, so close gives no
-#   codex_cleanup for it. Session id: Herdr's (the agent's own hook in its pane); without it, at the
-#   end of a turn, the id of the checkout's only Codex rollout written since the agent started (to
-#   the millisecond); two such rollouts leave it null with session_ambiguous true.
+#   read still finds it, before the deadline. They count a dialog once a second read 1 s later still
+#   shows it: a read right after keys can still show the dialog they answered. Mode B Codex runs no
+#   companion, so close gives no codex_cleanup for it. Session id: Herdr's (the agent's own hook in
+#   its pane); without it, at the end of a turn, the id of the checkout's only Codex rollout written
+#   since the agent started (to the millisecond); two such rollouts leave it null with
+#   session_ambiguous true.
 # keys sends keys (Herdr key names) to a mode B agent's pane, to answer a dialog.
 # wait blocks until the worker's outcome is known. Mode A: the exit record. Mode B: the delivered turn
 #   settles. It never stops a worker, except a mode A worker whose pane and supervisor are both gone.
@@ -963,7 +965,7 @@ blocked_grace() {  # Herdr can show blocked for a moment after a dialog is answe
     case $(herr_code) in timeout|agent_not_found|pane_not_found) ;; *) herdr_fail agent wait ;; esac
   fi
 }
-BLOCKED_SEEN=0
+BLOCKED_SEEN=0 DIALOG_SEEN=0
 
 startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as ready, at a dialog, or not ready yet
   local left splash=0 look quiet=0 was_quiet
@@ -997,7 +999,14 @@ startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as r
             continue
           fi
         fi
-        [ "$CODEX_SCREEN" != dialog ] || blocked_b
+        # A dialog counts once the next read, 1 s later, still shows it: right after keys answer one,
+        # the first read can still show it, before Codex has drawn what follows.
+        if [ "$CODEX_SCREEN" = dialog ]; then
+          [ "$DIALOG_SEEN" = 0 ] || blocked_b
+          DIALOG_SEEN=1
+        else
+          DIALOG_SEEN=0
+        fi
         look=nap ;;
     esac
     left=$((${1} - $(now_ms)))
