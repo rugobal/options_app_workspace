@@ -3,7 +3,7 @@
 #
 #   herdr-worker.sh launch --run DIR --id ID --label TEXT --cwd DIR --harness claude|codex|deepseek|agy|plain
 #                          --cmd-file FILE [--workspace-label TEXT]
-#   herdr-worker.sh start  --run DIR --id ID --label TEXT --cwd DIR --kind claude|pi|agy --args-file FILE
+#   herdr-worker.sh start  --run DIR --id ID --label TEXT --cwd DIR --kind claude|codex|pi|agy --args-file FILE
 #                          --report FILE [--env KEY=VALUE]... [--timeout MS] [--workspace-label TEXT]
 #   herdr-worker.sh ready  --run DIR --id ID [--timeout MS]
 #   herdr-worker.sh keys   --run DIR --id ID --keys "KEY [KEY]..."
@@ -25,9 +25,16 @@
 # start (mode B) starts an interactive agent with `herdr agent start`. It is ready for its first prompt
 #   when start (or a later ready) exits 0. Each prompt is one turn; the turn is done when the agent has
 #   settled and the --report file was written during that turn. An args file holds one agent argument
-#   per line, taken literally (no shell expansion); empty lines are skipped. Codex is refused (1c).
+#   per line, taken literally (no shell expansion); empty lines are skipped.
 #   prompt's JSON says whether the text was delivered: a prompt refused at a dialog opens no turn, and
 #   wait refuses until a prompt is delivered (ready, then the same prompt again).
+#   Codex: Herdr shows its hooks review as idle, so a Codex agent is ready only with its empty prompt
+#   on screen ("? for shortcuts"); a known Codex dialog on screen counts as blocked (5), any other
+#   screen as not ready yet (3). After a dialog Codex shows idle, then working while it finishes
+#   starting, so its empty prompt counts once Herdr shows no work for 3 s. Mode B Codex runs no
+#   companion, so close gives no codex_cleanup for it. Without a session id from Herdr (its
+#   SessionStart hook did not run), the id comes from the checkout's Codex rollout file written last
+#   since the agent started (so one Codex agent per checkout at a time).
 # keys sends keys (Herdr key names) to a mode B agent's pane, to answer a dialog.
 # wait blocks until the worker's outcome is known. Mode A: the exit record. Mode B: the delivered turn
 #   settles. It never stops a worker, except a mode A worker whose pane and supervisor are both gone.
@@ -868,6 +875,39 @@ emit_b() {  # emit_b EXIT [SCREEN]: a mode B worker's state as the call's result
 gone_b() { transition gone '{}'; AGENT_STATUS=gone; emit_b 4; }
 blocked_b() { transition blocked '{}'; AGENT_STATUS=blocked; emit_b 5 "$(screen_text)"; }
 
+CODEX_SCREEN=""
+codex_ready_screen() {  # a Codex agent's screen: CODEX_SCREEN is ready (its empty prompt), dialog or other
+  local s
+  s=$(screen_text)
+  if grep -q -E 'Trust this folder\?|Hooks need review|enter (confirm|continue) · esc' <<< "$s"; then
+    CODEX_SCREEN=dialog
+    return 1
+  fi
+  if grep -q -F '? for shortcuts' <<< "$s"; then CODEX_SCREEN=ready; return 0; fi
+  CODEX_SCREEN=other
+  return 1
+}
+
+codex_rollout_session() {  # the id of the checkout's Codex rollout written last since the agent started
+  local dir since line f id
+  dir=${CODEX_HOME:-$HOME/.codex}/sessions
+  [ -d "$dir" ] || return 0
+  since=$(date -d "$(wf started_at)" +%s 2> /dev/null) || return 0
+  # Newest first; a resumed session appends to its old file, so the write time decides, not the start.
+  while IFS= read -r line; do
+    f=${line#* }
+    id=$(head -n 1 "$f" 2> /dev/null | jq -r --arg c "$(wf checkout)" \
+      'select(.type == "session_meta" and .payload.cwd == $c and .payload.originator == "codex-tui") | .payload.id' 2> /dev/null) || continue
+    if [ -n "$id" ]; then printf '%s' "$id"; return 0; fi
+  done < <(find "$dir" -name 'rollout-*.jsonl' -newermt "@$since" -printf '%T@ %p\n' 2> /dev/null | sort -rn)
+}
+session_fill() {  # record the agent's session id: Herdr's, else for Codex its rollout's
+  if [ -z "$SESSION_ID" ] && [ "$(wf harness)" = codex ] && [ -z "$(wf session_id)" ]; then
+    SESSION_ID=$(codex_rollout_session)
+  fi
+  [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "$(wf session_id)" ] || update_worker '{session_id: $s}' --arg s "$SESSION_ID"
+}
+
 blocked_grace() {  # Herdr can show blocked for a moment after a dialog is answered: allow 3 s for a change
   [ "$BLOCKED_SEEN" = 0 ] || return 1
   BLOCKED_SEEN=1
@@ -878,8 +918,9 @@ blocked_grace() {  # Herdr can show blocked for a moment after a dialog is answe
 BLOCKED_SEEN=0
 
 startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as ready, at a dialog, or not ready yet
-  local left splash=0
+  local left splash=0 look
   while :; do
+    look=wait
     if ! agent_check && [ "$AGENT_STATUS" = gone ]; then
       transition gone '{}'
       emit_b 4 "$(screen_text)"
@@ -891,18 +932,29 @@ startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as r
       sleep 0.5
       continue
     fi
-    [ -z "$SESSION_ID" ] || update_worker '{session_id: $s}' --arg s "$SESSION_ID"
+    session_fill
     case $AGENT_STATUS in
       blocked) if blocked_grace; then continue; fi; blocked_b ;;
-      idle|done) transition ready '{}'; emit_b 0 ;;
+      idle|done)
+        # Herdr shows Codex's hooks review as idle: only its empty prompt on screen means ready. After
+        # a dialog Codex shows idle, then working while it finishes starting: ready once 3 s pass quietly.
+        if [ "$(wf harness)" != codex ]; then transition ready '{}'; emit_b 0; fi
+        if codex_ready_screen; then
+          if hcall agent wait "$(wf pane_id)" --until working --until blocked --timeout 3000; then continue; fi
+          case $(herr_code) in timeout) ;; agent_not_found|pane_not_found) continue ;; *) herdr_fail agent wait ;; esac
+          transition ready '{}'
+          emit_b 0
+        fi
+        [ "$CODEX_SCREEN" != dialog ] || blocked_b
+        look=nap ;;
     esac
     left=$((${1} - $(now_ms)))
     if [ "$left" -lt 100 ]; then
       [ "$(wf turn)" != 0 ] || transition starting '{}'
       emit_b 3 "$(screen_text | tail -n 25)"
     fi
-    if [ "$AGENT_STATUS" = absent ]; then
-      nap 1000 "$1"   # Herdr has not seen the agent in its pane yet
+    if [ "$AGENT_STATUS" = absent ] || [ "$look" = nap ]; then
+      nap 1000 "$1"   # Herdr has not seen the agent in its pane yet, or Codex's screen is not settled
     elif ! hcall agent wait "$(wf pane_id)" --until idle --until done --until blocked --timeout "$((left < 30000 ? left : 30000))"; then
       case $(herr_code) in timeout|agent_not_found|pane_not_found) ;; *) herdr_fail agent wait ;; esac
     fi
@@ -913,7 +965,7 @@ settle_b() {  # settle_b DEADLINE_MS: after a delivered prompt, until the turn e
   local rechecked=0 left
   while :; do
     agent_check || gone_b
-    [ -z "$SESSION_ID" ] || update_worker '{session_id: $s}' --arg s "$SESSION_ID"
+    session_fill
     case $AGENT_STATUS in
       blocked) if blocked_grace; then continue; fi; blocked_b ;;
       idle|done)
@@ -945,11 +997,10 @@ cmd_start() {
   require --run "$RUN" --id "$ID" --label "$LABEL" --cwd "$CWD" --kind "$KIND" --args-file "$ARGS_FILE" --report "$REPORT"
   setup_run
   check_id
-  parse_timeout 60000
   case $KIND in
-    claude|pi|agy) ;;
-    codex) fail 64 codex_mode_a_only "Codex workers run in mode A only (decision 1c): interactive Codex stops at a trust dialog in every new worktree" ;;
-    *) fail 64 usage "--kind must be claude, pi or agy" ;;
+    claude|pi|agy) parse_timeout 60000 ;;
+    codex) parse_timeout 120000 ;;   # Codex starts its MCP servers first; Herdr shows it working meanwhile
+    *) fail 64 usage "--kind must be claude, codex, pi or agy" ;;
   esac
   [ -d "$CWD" ] || fail 64 usage "--cwd is not a directory: $CWD"
   [ -f "$ARGS_FILE" ] || fail 64 usage "--args-file not found: $ARGS_FILE"
@@ -1033,6 +1084,10 @@ cmd_prompt() {
       transition blocked '$b' --argjson b "$before"; AGENT_STATUS=blocked; emit_b 5 "$(screen_text)" ;;
     working) fail 64 agent_working "agent $(wf agent_name) is still working: wait for its turn to end first" ;;
   esac
+  if [ "$(wf harness)" = codex ] && ! codex_ready_screen && [ "$CODEX_SCREEN" = dialog ]; then
+    # Herdr shows Codex's hooks review as idle; text sent now would answer it.
+    transition blocked '$b' --argjson b "$before"; AGENT_STATUS=blocked; emit_b 5 "$(screen_text)"
+  fi
   deadline=$(($(now_ms) + T))
   # The turn starts before the prompt goes out, so a report written by this turn always counts.
   transition working '{turn: (.turn + 1), delivered: true, report_snapshot: $s, prompted_at: $t}' \
@@ -1191,7 +1246,7 @@ close_one() {  # stop and close the current worker; CLOSE_RESULT holds its resul
         --arg t "$(now)" --argjson p "$PANE_CLOSED" --arg w "$worker"
     fi
   fi
-  if [ "$(wf harness)" = codex ]; then
+  if [ "$(wf harness)" = codex ] && [ "$(wf mode)" = A ]; then   # mode B Codex runs no companion
     note=$(jq -cn --arg py "$SCRIPT_DIR/cleanup-codex-companion.py" --arg ws "$(wf checkout)" \
       '{argv: ["python3", $py, "--workspace", $ws, "--execute"],
         note: "its companion runtime outlives the pane: run this once its result is collected"}')
