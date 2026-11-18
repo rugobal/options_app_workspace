@@ -24,17 +24,22 @@
 #   after 5 s.
 # start (mode B) starts an interactive agent with `herdr agent start`. It is ready for its first prompt
 #   when start (or a later ready) exits 0. Each prompt is one turn; the turn is done when the agent has
-#   settled and the --report file was written during that turn. An args file holds one agent argument
-#   per line, taken literally (no shell expansion); empty lines are skipped.
-#   prompt's JSON says whether the text was delivered: a prompt refused at a dialog opens no turn, and
-#   wait refuses until a prompt is delivered (ready, then the same prompt again).
-#   Codex: Herdr shows its hooks review as idle, so a Codex agent is ready only with its empty prompt
-#   on screen ("? for shortcuts"); a known Codex dialog on screen counts as blocked (5), any other
-#   screen as not ready yet (3). After a dialog Codex shows idle, then working while it finishes
-#   starting, so its empty prompt counts once Herdr shows no work for 3 s. Mode B Codex runs no
-#   companion, so close gives no codex_cleanup for it. Without a session id from Herdr (its
-#   SessionStart hook did not run), the id comes from the checkout's Codex rollout file written last
-#   since the agent started (so one Codex agent per checkout at a time).
+#   settled and the --report file was written during that turn; start creates the report's folder. An
+#   args file holds one argument per line, passed as is: each line is exactly the characters the agent
+#   receives (no shell quoting or expansion; quotes stay); empty lines are skipped.
+#   prompt's JSON says whether the text was delivered: a prompt refused at a dialog, or at a screen
+#   that is not ready for it, opens no turn, and wait refuses until a prompt is delivered (ready, then
+#   the same prompt again).
+#   Codex: only its empty composer, with focus and no popup, takes a prompt; codex_screen reads that
+#   from the bottom of the screen, read anew just before sending. Herdr shows Codex's hooks review as
+#   idle, so the screen decides: a Codex dialog there is 5, anything else that is not the empty
+#   composer (a draft, the history search, a menu, a pane too narrow for the footer hints, a failed
+#   read) is 3, and nothing is sent. After a dialog Codex shows idle, then working while it finishes
+#   starting, so start and ready count the composer once Herdr has shown no work for 3 s and a fresh
+#   read still finds it, before the deadline. Mode B Codex runs no companion, so close gives no
+#   codex_cleanup for it. Session id: Herdr's (the agent's own hook in its pane); without it, at the
+#   end of a turn, the id of the checkout's only Codex rollout written since the agent started (to
+#   the millisecond); two such rollouts leave it null with session_ambiguous true.
 # keys sends keys (Herdr key names) to a mode B agent's pane, to answer a dialog.
 # wait blocks until the worker's outcome is known. Mode A: the exit record. Mode B: the delivered turn
 #   settles. It never stops a worker, except a mode A worker whose pane and supervisor are both gone.
@@ -74,7 +79,8 @@
 #   0  done. wait: the worker finished (mode A: its own status is exit_code; mode B: the turn's report).
 #   1  Herdr or internal error (error.detail holds Herdr's error), or close could not stop a worker.
 #   2  not inside Herdr (HERDR_ENV is not 1) or a tool missing: dispatch with background Bash instead.
-#   3  timeout, nothing changed; start/ready: the agent is not ready yet (no dialog).
+#   3  timeout, nothing changed; start/ready: the agent is not ready yet (no dialog); prompt with
+#      delivered false: nothing sent, the agent's input is not ready for it (the screen in the JSON).
 #   4  gone or stopped: the pane or agent is gone, the mode A worker was stopped by a signal, or the
 #      worker is closing.
 #   5  mode B agent at a dialog: the JSON holds the visible screen.
@@ -141,7 +147,7 @@ fail() {  # fail EXIT CODE MESSAGE [DETAIL_JSON]
     exit "$st"
   fi
   [ ! -s "$FAILF" ] || read -r st json < "$FAILF"
-  cleanup_after_failure "$(jq -r '.error.message' <<< "$json")"
+  ! declare -F cleanup_after_failure > /dev/null || cleanup_after_failure "$(jq -r '.error.message' <<< "$json")"
   EMITTED=1
   printf '%s\n' "$json"
   exit "$st"
@@ -870,42 +876,84 @@ emit_b() {  # emit_b EXIT [SCREEN]: a mode B worker's state as the call's result
   emit "$1" "$(jq -c --arg st "${AGENT_STATUS:-unknown}" --arg sc "${2:-}" \
     '{id, agent_name, agent_status: $st, state, turn, delivered, report_turn, report,
       report_ready: (.turn > 0 and .report_turn == .turn and .delivered != false), session_id}
+     + (if .session_ambiguous then {session_ambiguous: true} else {} end)
      + (if $sc == "" then {} else {screen: $sc} end)' <<< "$W")"
 }
 gone_b() { transition gone '{}'; AGENT_STATUS=gone; emit_b 4; }
 blocked_b() { transition blocked '{}'; AGENT_STATUS=blocked; emit_b 5 "$(screen_text)"; }
 
-CODEX_SCREEN=""
-codex_ready_screen() {  # a Codex agent's screen: CODEX_SCREEN is ready (its empty prompt), dialog or other
-  local s
-  s=$(screen_text)
-  if grep -q -E 'Trust this folder\?|Hooks need review|enter (confirm|continue) · esc' <<< "$s"; then
-    CODEX_SCREEN=dialog
+# Codex's screen, read at its bottom: Codex draws its input area (composer, status line, footer) or a
+# dialog below the transcript, so words in the transcript never decide. The footer's " for shortcuts"
+# and " for agents" hints are Codex's own sign of an empty composer that has focus with no popup (it
+# draws them only then: codex-rs/tui/src/bottom_pane/chat_composer/passive_hints.rs); a draft, the
+# history search (ctrl+r), a slash or file menu, a dialog, a pane too narrow for both hints and a
+# failed read all lack them.
+CODEX_SCREEN="" CODEX_TEXT=""
+codex_screen() {  # CODEX_SCREEN: composer (0), dialog or other (1); CODEX_TEXT: the screen read
+  local -a rows
+  local n i comp=-1 last2 last12
+  CODEX_SCREEN=other
+  CODEX_TEXT=$(screen_text)
+  # Every command here and below exits 0 or sits in a condition: the ERR trap would count a non-zero
+  # status in a subshell as the call's failure.
+  mapfile -t rows < <(sed -e 's/[[:space:]]*$//' -e '/^$/d' <<< "$CODEX_TEXT")
+  n=${#rows[@]}
+  [ "$n" -gt 0 ] || return 1
+  last2=$((n > 2 ? n - 2 : 0)) last12=$((n > 12 ? n - 12 : 0))
+  # A dialog ends the screen: its key line ("enter confirm · esc skip", "enter continue · esc back",
+  # "Press enter to confirm or esc to cancel") in the last two rows, an option list above it.
+  if printf '%s\n' "${rows[@]:last2}" | grep -q -E '^ *(enter [a-z]+ · esc [a-z]+|Press enter to confirm or esc to cancel)'; then
+    if printf '%s\n' "${rows[@]:last12}" | grep -q -E '^(›| ) *[0-9]+\. '; then CODEX_SCREEN=dialog; fi
     return 1
   fi
-  if grep -q -F '? for shortcuts' <<< "$s"; then CODEX_SCREEN=ready; return 0; fi
-  CODEX_SCREEN=other
+  # The composer is the last row that starts with "›", within the last eight rows; a hint follows it
+  # in the last two rows.
+  for ((i = n - 1; i >= 0 && i >= n - 8; i--)); do
+    if [[ ${rows[i]} == '›'* ]]; then comp=$i; break; fi
+  done
+  [ "$comp" -ge 0 ] && ! [[ ${rows[comp]} =~ ^›\ *[0-9]+\.\  ]] || return 1
+  for ((i = (comp + 1 > last2 ? comp + 1 : last2); i < n; i++)); do
+    if [[ ${rows[i]} == *' for shortcuts'* || ${rows[i]} == *' for agents'* ]]; then CODEX_SCREEN=composer; return 0; fi
+  done
   return 1
 }
 
-codex_rollout_session() {  # the id of the checkout's Codex rollout written last since the agent started
-  local dir since line f id
+codex_rollout_session() {  # the checkout's Codex rollout ids written since the agent started: one id, "many" or nothing
+  local dir since ids
   dir=${CODEX_HOME:-$HOME/.codex}/sessions
-  [ -d "$dir" ] || return 0
-  since=$(date -d "$(wf started_at)" +%s 2> /dev/null) || return 0
-  # Newest first; a resumed session appends to its old file, so the write time decides, not the start.
-  while IFS= read -r line; do
-    f=${line#* }
-    id=$(head -n 1 "$f" 2> /dev/null | jq -r --arg c "$(wf checkout)" \
-      'select(.type == "session_meta" and .payload.cwd == $c and .payload.originator == "codex-tui") | .payload.id' 2> /dev/null) || continue
-    if [ -n "$id" ]; then printf '%s' "$id"; return 0; fi
-  done < <(find "$dir" -name 'rollout-*.jsonl' -newermt "@$since" -printf '%T@ %p\n' 2> /dev/null | sort -rn)
+  since=$(wf started_ms)
+  [ -d "$dir" ] && [ -n "$since" ] || return 0
+  # Written since the start, to the millisecond: a resumed session appends to its old file.
+  # No step may exit non-zero (pipefail and the ERR trap): none found is an empty answer, not an error.
+  ids=$({ command find "$dir" -name 'rollout-*.jsonl' -printf '%T@ %p\n' 2> /dev/null || true; } |
+    awk -v s="$since" '$1 * 1000 >= s { sub(/^[^ ]+ /, ""); print }' |
+    while IFS= read -r f; do
+      head -n 1 "$f" 2> /dev/null | jq -r --arg c "$(wf checkout)" \
+        'select(.type == "session_meta" and .payload.cwd == $c and .payload.originator == "codex-tui") | .payload.id' 2> /dev/null || true
+    done | sed '/^$/d' | sort -u)
+  case $ids in
+    '') ;;
+    *$'\n'*) printf many ;;
+    *) printf '%s' "$ids" ;;
+  esac
 }
-session_fill() {  # record the agent's session id: Herdr's, else for Codex its rollout's
-  if [ -z "$SESSION_ID" ] && [ "$(wf harness)" = codex ] && [ -z "$(wf session_id)" ]; then
-    SESSION_ID=$(codex_rollout_session)
+session_fill() {  # session_fill [rollout]: record the agent's session id once it is verified as this agent's
+  # Herdr's value comes from the agent's own hook in its pane. Without it, a Codex agent whose turn has
+  # ended (rollout) takes the id of the checkout's one rollout written since its start; two such
+  # rollouts (two Codex agents in one checkout) leave it unset and mark it session_ambiguous.
+  local found
+  if [ -z "$SESSION_ID" ] && [ "${1:-}" = rollout ] && [ "$(wf harness)" = codex ] &&
+    [ -z "$(wf session_id)" ] && [ "$(wf session_ambiguous)" != true ]; then
+    found=$(codex_rollout_session)
+    case $found in
+      '') ;;
+      many) update_worker '{session_ambiguous: true}' ;;
+      *) SESSION_ID=$found ;;
+    esac
   fi
-  [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "$(wf session_id)" ] || update_worker '{session_id: $s}' --arg s "$SESSION_ID"
+  if [ -n "$SESSION_ID" ] && [ "$SESSION_ID" != "$(wf session_id)" ]; then
+    update_worker '{session_id: $s} + (if .session_ambiguous then {session_ambiguous: false} else {} end)' --arg s "$SESSION_ID"
+  fi
 }
 
 blocked_grace() {  # Herdr can show blocked for a moment after a dialog is answered: allow 3 s for a change
@@ -918,9 +966,9 @@ blocked_grace() {  # Herdr can show blocked for a moment after a dialog is answe
 BLOCKED_SEEN=0
 
 startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as ready, at a dialog, or not ready yet
-  local left splash=0 look
+  local left splash=0 look quiet=0 was_quiet
   while :; do
-    look=wait
+    look=wait was_quiet=$quiet quiet=0
     if ! agent_check && [ "$AGENT_STATUS" = gone ]; then
       transition gone '{}'
       emit_b 4 "$(screen_text)"
@@ -936,14 +984,18 @@ startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as r
     case $AGENT_STATUS in
       blocked) if blocked_grace; then continue; fi; blocked_b ;;
       idle|done)
-        # Herdr shows Codex's hooks review as idle: only its empty prompt on screen means ready. After
-        # a dialog Codex shows idle, then working while it finishes starting: ready once 3 s pass quietly.
         if [ "$(wf harness)" != codex ]; then transition ready '{}'; emit_b 0; fi
-        if codex_ready_screen; then
-          if hcall agent wait "$(wf pane_id)" --until working --until blocked --timeout 3000; then continue; fi
-          case $(herr_code) in timeout) ;; agent_not_found|pane_not_found) continue ;; *) herdr_fail agent wait ;; esac
-          transition ready '{}'
-          emit_b 0
+        # Herdr shows Codex's hooks review as idle, so only Codex's empty composer means ready. After a
+        # dialog Codex shows idle, then working while it finishes starting: ready when Herdr has shown
+        # no work for 3 s and a fresh look (Herdr's state and the screen, read after them) still finds
+        # the composer, all before the deadline.
+        if codex_screen; then
+          if [ "$was_quiet" = 1 ]; then transition ready '{}'; emit_b 0; fi
+          if [ "$((${1} - $(now_ms)))" -ge 3500 ]; then
+            if hcall agent wait "$(wf pane_id)" --until working --until blocked --timeout 3000; then continue; fi
+            case $(herr_code) in timeout) quiet=1 ;; agent_not_found|pane_not_found) ;; *) herdr_fail agent wait ;; esac
+            continue
+          fi
         fi
         [ "$CODEX_SCREEN" != dialog ] || blocked_b
         look=nap ;;
@@ -969,9 +1021,10 @@ settle_b() {  # settle_b DEADLINE_MS: after a delivered prompt, until the turn e
     case $AGENT_STATUS in
       blocked) if blocked_grace; then continue; fi; blocked_b ;;
       idle|done)
-        if report_fresh; then transition reported '{report_turn: .turn}'; emit_b 0; fi
+        if report_fresh; then session_fill rollout; transition reported '{report_turn: .turn}'; emit_b 0; fi
         # An early idle can come before the turn's work: look once more after a pause.
         if [ "$rechecked" = 0 ]; then rechecked=1; nap 3000 "$1"; continue; fi
+        session_fill rollout
         transition settled '{}'
         emit_b 6 "$(screen_text | tail -n 25)" ;;
     esac
@@ -984,7 +1037,7 @@ settle_b() {  # settle_b DEADLINE_MS: after a delivered prompt, until the turn e
 }
 
 NATIVE=()
-read_args() {  # one argument per line, taken literally; empty lines are skipped, a trailing CR dropped
+read_args() {  # one argument per line, passed as is; empty lines are skipped, a trailing CR dropped
   local line
   NATIVE=()
   while IFS= read -r line || [ -n "$line" ]; do
@@ -1008,15 +1061,16 @@ cmd_start() {
   for e in "${ENVS[@]}"; do [[ $e =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || fail 64 usage "--env takes KEY=VALUE: $e"; done
   CWD=$(cd "$CWD" && pwd -P)
   REPORT=$(abs "$REPORT")
+  mkdir -p "$(dirname "$REPORT")" || fail 64 usage "cannot create the report's folder: $(dirname "$REPORT")"
   read_args
   local name deadline entry
   name=$(agent_name "$KIND")
   ! hlook agent get "$name" || fail 1 agent_name_taken "an agent named $name already runs in Herdr"
   entry=$(jq -cn --arg id "$ID" --arg label "$LABEL" --arg k "$KIND" --arg name "$name" --arg cwd "$CWD" \
-    --arg report "$REPORT" --arg t "$(now)" \
+    --arg report "$REPORT" --arg t "$(now)" --argjson ms "$(now_ms)" \
     '{id: $id, label: $label, harness: $k, mode: "B", agent_name: $name, checkout: $cwd, report: $report,
       session_id: null, state: "starting", turn: 0, delivered: null, report_turn: null, report_snapshot: null,
-      prompted_at: null, started_at: $t}')
+      prompted_at: null, started_at: $t, started_ms: $ms}')
 
   lock
   [ -z "$(reg_read | jq -r --arg id "$ID" '.workers[] | select(.id == $id) | .id')" ] ||
@@ -1084,9 +1138,13 @@ cmd_prompt() {
       transition blocked '$b' --argjson b "$before"; AGENT_STATUS=blocked; emit_b 5 "$(screen_text)" ;;
     working) fail 64 agent_working "agent $(wf agent_name) is still working: wait for its turn to end first" ;;
   esac
-  if [ "$(wf harness)" = codex ] && ! codex_ready_screen && [ "$CODEX_SCREEN" = dialog ]; then
-    # Herdr shows Codex's hooks review as idle; text sent now would answer it.
-    transition blocked '$b' --argjson b "$before"; AGENT_STATUS=blocked; emit_b 5 "$(screen_text)"
+  if [ "$(wf harness)" = codex ] && ! codex_screen; then
+    # Only Codex's empty composer takes a prompt. A dialog (Herdr shows the hooks review as idle) is 5;
+    # a draft, the history search, a menu or a screen it can't read is 3. Neither sends anything.
+    if [ "$CODEX_SCREEN" = dialog ]; then
+      transition blocked '$b' --argjson b "$before"; AGENT_STATUS=blocked; emit_b 5 "$CODEX_TEXT"
+    fi
+    update_worker '$b' --argjson b "$before"; emit_b 3 "$CODEX_TEXT"
   fi
   deadline=$(($(now_ms) + T))
   # The turn starts before the prompt goes out, so a report written by this turn always counts.
@@ -1110,7 +1168,7 @@ cmd_prompt() {
 wait_b() {
   [ "$(wf turn)" -gt 0 ] || fail 64 not_prompted "wait follows a delivered prompt; before the first prompt use ready"
   [ "$(delivered)" != false ] ||
-    fail 64 not_delivered "the last prompt was refused before delivery: answer the dialog, run ready, then send the same prompt again"
+    fail 64 not_delivered "the last prompt was not delivered (a dialog, or an input not ready for it): answer the dialog or leave the input to its owner, run ready, then send the same prompt again"
   parse_timeout 7000000
   settle_b "$(($(now_ms) + T))"
 }

@@ -17,8 +17,8 @@ Everything that must outlive a compaction or the session sits under `.scratch/or
 - `standing-instructions.md`: the user's lasting instructions on how you work, kept across runs. Worker choices live in `workers.md`, never here. When the user gives a new lasting instruction, rewrite the matching item with their words and the date, as for `workers.md`.
 - `workers.md`: the worker setting ([section 2](#2-the-worker-setting)), kept across runs.
 - `runs/<date>-<slug>/rules.md`: the run's shared worker rules ([section 3](#3-brief-a-worker)).
-- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then a `session started <time>` line per session continuing the run and a `context compacted` line after each compaction, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID; background Bash task ID, or on the Herdr route the worker id and its `wait` task ID; plus Codex job ID, Claude or DeepSeek session ID, or Antigravity conversation ID and scope per attempt), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit, Codex runtime cleanup (pending, stopped, or skipped with reason).
-- `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>-<attempt>.txt` for each Codex attempt's output (`.json` for DeepSeek and Antigravity). On the Herdr route, `out/<task>-<attempt>.cmd` holds the worker's command and `.log` its output instead, beside `herdr-worker.sh`'s own files for the worker (`.exit` is its exit record).
+- `runs/<date>-<slug>/ledger.md`: first line `Run: open` or `Run: closed`, then a `session started <time>` line per session continuing the run and a `context compacted` line after each compaction, then one row per task: id, title, depends on, provider and tier, worker (Claude agent ID; background Bash task ID, or on the Herdr route the worker id and its `wait` task ID; plus per attempt a companion Codex worker's job ID, a mode B worker's session ID, a Claude or DeepSeek session ID, or an Antigravity conversation ID and scope), checkout and branch, state (planned, running, checking, correcting, accepted, integrated, held), commit, and for a companion Codex worker its runtime cleanup (pending, stopped, or skipped with reason; a mode B Codex worker has none).
+- `runs/<date>-<slug>/briefs/<task>.md`, and `out/<task>-<attempt>.txt` for each companion Codex attempt's output (`.json` for DeepSeek and Antigravity). On the Herdr route, mode A: `out/<task>-<attempt>.cmd` holds the worker's command and `.log` its output instead; mode B: `out/<id>.args` holds its arguments, `out/<id>.prompt` its prompt and `out/<id>/report.md` its report. Both sit beside `herdr-worker.sh`'s own files for the worker (`.exit` is its exit record).
 - `runs/<date>-<slug>/workers.json`: on the Herdr route, the registry `herdr-worker.sh` keeps of the run's workers: the run's own path, each worker's pane and process group, its state and exit code. It is how a later session adopts workers still running. Read it only through `herdr-worker.sh status`, which also says what Herdr and the process table show now; a registry copied from another run is refused.
 
 Update the ledger at every state change. After a compaction, and at the start of any session that continues a run, record `context compacted` or `session started <time>`, then read `standing-instructions.md`, `workers.md` and the open ledger before acting: they, not your recollection, say how to work and what is running.
@@ -149,30 +149,68 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
 
 **Mode B, on request: an interactive agent the user can steer.** Choose it when the user may want to watch a worker and type into it. It takes Claude (`--kind claude`), Codex (`--kind codex`), DeepSeek through Pi (`--kind pi`) and Antigravity (`--kind agy`).
 
-1. Write the agent's arguments to `<run>/out/<id>.args`, **one argument per line, taken literally**: no quotes, no `$`, no shell expansion; empty lines are skipped. A flag and its value are two lines.
+1. Write the agent's arguments to `<run>/out/<id>.args`, **one argument per line, passed as is**: write exactly the characters the program should receive. Shell quotes are not needed and are not removed, and nothing is expanded; empty lines are skipped. A flag and its value are two lines.
    - Claude: `--model`, `<model>`, `--effort`, `<effort>` (when one is named), `--permission-mode`, `auto`, `--strict-mcp-config`, plus `--advisor`, `<model>` when `workers.md` names one. Code Mode and any other variable the agent reads at start go to `start` as `--env CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`.
-   - Codex: `--model`, `<model>`, `-c`, `model_reasoning_effort=<effort>`, `--ask-for-approval`, `never`, then the role's lines, every path absolute. Its result is its report, as for every mode B worker; the `session_id` in `prompt`'s JSON is Herdr's, or, when the hooks review was skipped, the one in Codex's own session file.
-     - builder: `--sandbox`, `workspace-write`, then `--add-dir` before each of: the worktree's own Git folder (`git -C "<checkout>" rev-parse --path-format=absolute --git-dir`), the `objects`, `refs` and `logs` folders of its common Git folder (the same with `--git-common-dir`), and `<run>/out`. With those folders writable it runs `git add` and `git commit` in a linked worktree and commits itself, like a Claude worker; the repo's config and hooks stay read-only, and it has no network, as in mode A.
-     - read-only reviewer: `-c`, `default_permissions="reviewer"`, `-c`, `permissions.reviewer.filesystem={":root"="read","<run>/out"="write"}`. It reads everything, runs read-only commands, and writes only under `<run>/out`. The profile is its whole sandbox: a `--sandbox` flag would replace it.
+   - Codex: a builder or a read-only reviewer, `<model>` and `<effort>` from the pin or tier and every path absolute. Its report goes in a folder of its own, `<run>/out/<id>/`, the one place outside its checkout it may write. Builder:
+
+     ```
+     -m
+     <model>
+     -c
+     model_reasoning_effort=<effort>
+     --ask-for-approval
+     never
+     --sandbox
+     workspace-write
+     --add-dir
+     <git dir>
+     --add-dir
+     <common git dir>/objects
+     --add-dir
+     <common git dir>/refs
+     --add-dir
+     <common git dir>/logs
+     --add-dir
+     <run>/out/<id>
+     ```
+
+     `<git dir>` is the worktree's own Git folder, `git -C "<checkout>" rev-parse --path-format=absolute --git-dir`, and `<common git dir>` the same with `--git-common-dir`. With those writable the builder runs `git add` and `git commit` in a linked worktree and commits itself, like a Claude worker; the repo's config and hooks stay read-only, and it has no network, as in mode A. Read-only reviewer, its TOML quotes part of the values:
+
+     ```
+     -m
+     <model>
+     -c
+     model_reasoning_effort=<effort>
+     --ask-for-approval
+     never
+     -c
+     default_permissions="reviewer"
+     -c
+     permissions.reviewer.filesystem={":root"="read","<run>/out/<id>"="write"}
+     ```
+
+     It reads everything, runs read-only commands, and writes only in `<run>/out/<id>`. The profile is its whole sandbox: a `--sandbox` flag would replace it.
    - Pi: `--model`, `openrouter/<the DeepSeek model>` (`openrouter/deepseek/deepseek-v4.1-flash-1017` unless `workers.md` names another), `--thinking`, `<effort>`. Pi starts with the user's own extensions, packages, skills and MCP servers, as the user's own Pi sessions do, because the linters and other tools help the worker (the owner's decision, 2026-11-18); Herdr's state extension is among them, which is how Herdr tracks the agent's state. A Pi worker can therefore reach what those extensions reach, for example the user's Telegram ask extension, so its brief says not to contact the user and to put questions in its report.
    - Antigravity: `--model`, `<model>`, `--effort`, `<effort>`; the checkout must be trusted, as above.
-2. `"<herdr-worker>" start --run "<run>" --id <id> --label "<label>" --cwd "<checkout>" --kind claude|codex|pi|agy --args-file "<run>/out/<id>.args" --report "<run>/out/<id>.md"`, plus the `--env` items. It returns when the agent is ready (0), at a dialog (5, the screen in `screen`), or not ready yet (3: run `"<herdr-worker>" ready --run "<run>" --id <id>`, which exits the same way).
-3. On 5: read `screen`. In a checkout you made, answer these dialogs with `"<herdr-worker>" keys --run "<run>" --id <id> --keys "<keys>"` (Herdr key names, such as `down enter`):
-   - a trust dialog: the keys for its trust choice. Codex's "Trust this folder?": `enter` (Trust and continue). Codex trusts the repository root, for a linked worktree its main repo, and saves that in `~/.codex/config.toml`, so worktrees of a trusted repo never show it.
-   - Codex's "Hooks need review": `esc`. Codex continues this session without the new or changed hooks and saves nothing. It shows whenever a hook is new or changed to Codex, so in every new worktree of a repo that tracks `.codex/hooks.json`.
+2. `"<herdr-worker>" start --run "<run>" --id <id> --label "<label>" --cwd "<checkout>" --kind claude|codex|pi|agy --args-file "<run>/out/<id>.args" --report "<run>/out/<id>/report.md"`, plus the `--env` items; `start` creates the report's folder. It returns when the agent is ready (0), at a dialog (5, the screen in `screen`), or not ready yet (3: run `"<herdr-worker>" ready --run "<run>" --id <id>`, which exits the same way).
+3. On 5: read `screen`. Only in a checkout you made, answer these dialogs with `"<herdr-worker>" keys --run "<run>" --id <id> --keys "<keys>"` (Herdr key names):
+   - Codex, "Trust this folder?": `enter` (Trust and continue). Codex trusts the repository root, for a linked worktree its main repo, and saves that in `~/.codex/config.toml`, so worktrees of a trusted repo never show it.
+   - Codex, "Hooks need review": `esc`. Codex continues this session without the new or changed hooks and saves nothing. It shows whenever a hook is new or changed to Codex, so in every new worktree of a repo that tracks `.codex/hooks.json`.
+   - Claude, Pi or Antigravity, its folder-trust dialog: the keys for its trust choice, read from `screen` (such as `down enter`).
 
    Every other dialog is the user's to answer in the tab. Then `ready` again. Send the first prompt only after `start` or `ready` exits 0.
-4. Write "Read and follow the brief at `<brief>`. Write your report to `<run>/out/<id>.md`, then end your turn." to `<run>/out/<id>.prompt`. In background Bash with `timeout` 7200000: `"<herdr-worker>" prompt --run "<run>" --id <id> --text-file "<run>/out/<id>.prompt"`. Each prompt is one turn; record `session_id` from its JSON. Its exit wakes you:
+4. Write "Read and follow the brief at `<brief>`. Write your report to `<run>/out/<id>/report.md`, then end your turn." to `<run>/out/<id>.prompt`. In background Bash with `timeout` 7200000: `"<herdr-worker>" prompt --run "<run>" --id <id> --text-file "<run>/out/<id>.prompt"`. Each prompt is one turn; record `session_id` from its JSON once it is set. A Codex worker's id is verified as its own: Herdr's, or its checkout's only Codex session written since it started; `session_ambiguous: true` means two Codex agents wrote in that checkout, and the id stays unset. Its exit wakes you:
    - 0: the agent finished its turn and wrote the report during it (`report_turn` equals `turn`). A report from an earlier turn or attempt never counts.
    - 5 with `delivered: false`: the agent was at a dialog, so the prompt was refused and no turn opened. Answer the dialog as in step 3 or leave it to the user, run `ready` until it exits 0, then send the same prompt again. `wait` refuses here (64 `not_delivered`).
    - 5 with `delivered: true`: the agent waits at a dialog mid-turn. Answer it as in step 3, then `"<herdr-worker>" wait --run "<run>" --id <id>` in background Bash, which exits like `prompt`. `wait` is only for a delivered prompt.
    - 6: the agent ended its turn without writing the report. Read `screen`, then `prompt` again with what remains.
-   - 3: time is up and the turn is still going: `wait` again. 4: the agent or its tab is gone; treat it as a stall.
+   - 3 with `delivered: false`: nothing was sent and no turn opened, because the agent's input was not its empty prompt (for Codex: a draft in the composer, the history search, a menu, or a pane too narrow for its footer hints; the screen is in `screen`). What is on screen is the user's: run `ready` until it exits 0, then send the same prompt again.
+   - 3 with `delivered: true`: time is up and the turn is still going: `wait` again. 4: the agent or its tab is gone; treat it as a stall.
 
 ## 5. Nudge
 
 - **Inspect a companion Codex worker** for a suspected stall: `node "<companion>" status "<job-id>" --cwd "<checkout>" --json`. When a Claude session ends normally, the plugin stops only the Codex jobs in the session's own working directory. A worker in another checkout (every worktree worker), or any worker after a crash, can still be running. Look it up by its recorded ID, which also finds earlier sessions' jobs, then cancel it or let it finish.
-- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. A companion Codex worker: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. Headless Claude and DeepSeek: rerun the dispatch command with `--resume <session_id>`, a brief of what remains, and the same `--cwd`. Antigravity: the same, with `--resume <conversation_id>`. For a worker from an earlier session, start fresh with a brief that continues from the branch's state. On the Herdr route, a resume or rerun is a new `launch` with the next attempt number and the changed command, after you `close` the earlier attempt; a headless Claude worker resumes with `--resume <session_id>` in the same checkout, and a mode B worker takes another `prompt`. A mode B Codex worker whose tab is gone resumes with a new `start` whose args file begins with the lines `resume` and `<session_id>`, then its role's lines; the conversation continues there.
+- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. A companion Codex worker: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. Headless Claude and DeepSeek: rerun the dispatch command with `--resume <session_id>`, a brief of what remains, and the same `--cwd`. Antigravity: the same, with `--resume <conversation_id>`. For a worker from an earlier session, start fresh with a brief that continues from the branch's state. On the Herdr route, a resume or rerun is a new `launch` with the next attempt number and the changed command, after you `close` the earlier attempt; a headless Claude worker resumes with `--resume <session_id>` in the same checkout, and a mode B worker takes another `prompt`. A mode B Codex worker whose tab is gone resumes with a new `start` whose args file is the line `resume`, the line with its verified `session_id`, then its whole recipe from `-m` on; the conversation continues there. Without a verified id, start fresh with a brief of what remains.
 - **Usage limit**: wait for the reset, with a background Bash `sleep` that wakes you then, or switch provider when the mode allows (`mixed`, `auto`). In `claude` or `codex` mode, tell the user what is waiting and until when.
 - **Stall or provider error** (a crash, network failure, garbled output, or a worker far past its expected time with no new output): stop it and rerun with a fresh worker on the same tier. For a companion Codex worker, cancel with `node "<companion>" cancel "<job-id>" --cwd "<checkout>" --json`: stopping Bash alone can leave the shared Codex background process working in the checkout. Confirm with `status` before replacing it. For DeepSeek, stopping the background Bash task stops the worker. For Antigravity, stopping it makes the wrapper stop its scope; when the wrapper was killed outright, stop the scope by its recorded name: `systemctl --user stop <scope>`. On the Herdr route, stopping the `wait` leaves the worker running; `"<herdr-worker>" close --run "<run>" --id <id>` stops it and closes its pane (for a companion Codex worker, after the `cancel`).
 - **Fails its checks after one correction round**: a fresh worker one tier up, given the brief plus what went wrong. Already at frontier: a fresh frontier worker on the other provider when the mode allows; otherwise the user decides.
@@ -181,7 +219,7 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
 
 Read DeepSeek's output JSON first: `is_error` and `result`. Read Antigravity's first: `status` (`SUCCESS` or `ERROR`), `error` and `response`. Read a companion Codex worker's launch output first. If its report is missing, retrieve the stored report or failure with `node "<companion>" result "<job-id>" --cwd "<checkout>" --json`. If `status` still lists the job as running after its process ended (the Bash exit, or `wait` on the Herdr route), the companion lost the turn: treat it as a stall ([section 5](#5-nudge)), and cancel the job first, since the cleanup helper skips a checkout with a job it thinks is running.
 
-On the Herdr route, the output sits in `out/<id>.log`. For Claude and DeepSeek workers its last line (`tail -n 1`) is that JSON object, with `is_error`, `result` and `session_id`. Codex's log holds what its `.txt` would, Antigravity's is its `.json`, and a mode B worker's report is its `.md`. A mode A tab shows its worker's state, so keep it true:
+On the Herdr route, the output sits in `out/<id>.log`. For Claude and DeepSeek workers its last line (`tail -n 1`) is that JSON object, with `is_error`, `result` and `session_id`. A companion Codex worker's log holds what its `.txt` would, Antigravity's is its `.json`, and a mode B worker's report is its `out/<id>/report.md`. A mode A tab shows its worker's state, so keep it true:
 
 - while you check a worker: `"<herdr-worker>" state --run "<run>" --id <id> --state working --message checking`;
 - while a worker's question waits for the user: `--state blocked --message "<question number>"`.
