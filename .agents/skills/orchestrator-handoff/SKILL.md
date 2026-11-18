@@ -6,7 +6,7 @@ description: >-
 
 # Orchestrator handoff
 
-A conductor session loses detail at every compaction. A fresh session reading the run's files loses none. So the conductor hands over at a **clean point**: no worker running, no correction pending.
+A conductor session loses detail at every compaction. A fresh session reading the run's files loses none. So the conductor hands over at a **clean point**: no correction pending, and no worker running outside Herdr. Workers in Herdr tabs (orchestrator §4, "Inside Herdr") keep running across the handoff, and the next session adopts them.
 
 This runs inside the [orchestrator](../orchestrator/SKILL.md) skill; that skill covers the run files, dispatch, checks, integration and Codex cleanup (cited below as orchestrator §n). Load it first if you are not already conducting.
 
@@ -21,15 +21,15 @@ Hand off at the first clean point after any one of:
 - the session's second compaction;
 - the user asks.
 
-The ledger's `session started` line dates the four hours and its `context compacted` lines count the compactions (orchestrator, "Run files"). Claude and DeepSeek workers end with the session; a Codex job can outlive it, so its result is collected here.
+The ledger's `session started` line dates the four hours and its `context compacted` lines count the compactions (orchestrator, "Run files"). Outside Herdr, Claude and DeepSeek workers end with the session; a Codex job can outlive it, so its result is collected here.
 
 Done when: one trigger holds. Step 2 reaches the clean point.
 
 ## 2. Drain
 
-Dispatch nothing new. Let running workers finish, then check and integrate their results as orchestrator §6 says. A task their integration unblocks stays planned in the ledger, for the next session.
+Dispatch nothing new. Let running workers outside Herdr finish, then check and integrate their results as orchestrator §6 says. Workers in Herdr tabs carry on as they are: the next session collects them. Results already in, from either kind, are checked and integrated now. A task their integration unblocks stays planned in the ledger, for the next session.
 
-Done when: no worker is running, every result is checked, and the accepted work is integrated.
+Done when: no worker runs outside Herdr, every result already in is checked, and the accepted work is integrated.
 
 ## 3. Write the handover
 
@@ -38,6 +38,7 @@ Write `runs/<run>/handover.md` with only what the ledger and the repos do not al
 - the state in a few lines: what is integrated and where, what is held and why;
 - the exact next step;
 - the branches and worktrees in use;
+- inside Herdr, the registry `runs/<run>/workers.json` and the ids of the workers still running in tabs;
 - the counters the run keeps: next decision number, next question number, last message id;
 - notes later tasks need that the ledger lacks;
 - anything owed to the user.
@@ -48,16 +49,17 @@ Done when: a conductor holding this file and the files it names can take the nex
 
 ## 4. Clean up
 
-Release each Codex runtime with the cleanup helper (orchestrator §6, "Release finished Codex runtimes"), and stop any leftover Antigravity scope (orchestrator §6, "Check Antigravity scopes"). Remove the worktrees of integrated tasks. Leave the run open when work remains.
+Release the Codex runtime of each finished Codex checkout with the cleanup helper (orchestrator §6, "Release finished Codex runtimes"), and stop any Antigravity scope no running worker owns (orchestrator §6, "Check Antigravity scopes"). A worker still running in a Herdr tab keeps its runtime, its scope and its tab. Remove the worktrees of integrated tasks. Leave the run open when work remains.
 
-Done when: the ledger records a runtime result for every Codex checkout, no `antigravity-worker-*` scope is listed, and no integrated task's worktree remains.
+Done when: the ledger records a runtime result for every finished Codex checkout, every `antigravity-worker-*` scope listed belongs to a running worker, and no integrated task's worktree remains.
 
 ## 5. Write the next session's prompt
 
 Write `.scratch/orchestrator/next-session-prompt.md`:
 
 - the start command, when the standing instructions name one;
-- a short prompt: act as conductor with the orchestrator skill, read `standing-instructions.md`, `workers.md` and the run's `handover.md`, then that run's `ledger.md` and `rules.md`, and continue.
+- a short prompt: act as conductor with the orchestrator skill, read `standing-instructions.md`, `workers.md` and the run's `handover.md`, then that run's `ledger.md` and `rules.md`, and continue;
+- inside Herdr, the adoption: run `herdr-worker.sh status --run <run>`, then start a fresh background `wait` (orchestrator §4, "Inside Herdr") for each worker whose `finished_at` is empty and whose state is not `closed`, and record each wait's task ID in the ledger.
 
 It points to the standing instructions; their file keeps the only copy.
 
