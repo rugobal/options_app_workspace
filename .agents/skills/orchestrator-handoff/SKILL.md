@@ -64,9 +64,10 @@ Write `.scratch/orchestrator/next-session-prompt.md`:
   - `running` (mode A) or `working` (mode B): a fresh background `wait`;
   - `starting` (mode A): its launch never finished; when `live` shows `supervisor_alive` true or an `exit_record`, the worker started, so a fresh `wait`; else `close` it and rerun;
   - `starting` or `ready` (mode B, never prompted): `ready`, then the first `prompt`;
-  - `blocked` (mode B): `ready` when `turn` is 0, else `wait`; either exits 5 at once with the dialog on `screen`; answer it as §4 says, or leave it to the user;
+  - `blocked` (mode B): `ready` when `turn` is 0 or `delivered` is false (a prompt refused at the dialog: send it again once `ready` exits 0), else `wait`; either exits 5 at once with the dialog on `screen`; answer it as §4 says, or leave it to the user;
   - `settled` (mode B): the turn ended without the report; `prompt` again with what remains;
   - `stopped`, `lost` or `gone`: a stall (orchestrator §5);
+  - `closing`: an earlier `close` failed or was cut short; `close` it again, then as `closed`;
   - `closed`, or missing from the registry: the attempt ended before its result was read; read what its log or report holds, else rerun it as the next attempt.
 
   The state, which comes from the worker's exit record, decides: never `finished_at` alone, and never the ledger's last word.

@@ -26,24 +26,41 @@
 #   when start (or a later ready) exits 0. Each prompt is one turn; the turn is done when the agent has
 #   settled and the --report file was written during that turn. An args file holds one agent argument
 #   per line, taken literally (no shell expansion); empty lines are skipped. Codex is refused (1c).
+#   prompt's JSON says whether the text was delivered: a prompt refused at a dialog opens no turn, and
+#   wait refuses until a prompt is delivered (ready, then the same prompt again).
 # keys sends keys (Herdr key names) to a mode B agent's pane, to answer a dialog.
 # wait blocks until the worker's outcome is known. Mode A: the exit record. Mode B: the delivered turn
 #   settles. It never stops a worker, except a mode A worker whose pane and supervisor are both gone.
-# close stops the worker (its verified process group: TERM, KILL after 5 s), closes its pane and marks
-#   it closed. A pane the user split off in the same tab stays. Herdr removes a tab with its last pane
-#   and a workspace with its last tab; this script never closes a tab or a workspace itself.
+# close marks the worker closing, closes its pane and stops the worker, and only once both are
+#   verified marks it closed; a close that failed or was cut short leaves closing, and runs again.
+#   Mode A: its verified process group (TERM, KILL after 5 s). Mode B: through Herdr only, never by
+#   signal: ctrl+c to the agent by name, then the pane close ends what runs in the pane; a pane no
+#   longer hosting the agent is closed and nothing is signalled. A pane the user split off in the same
+#   tab stays. Herdr removes a tab with its last pane and a workspace with its last tab; this script
+#   never closes a tab or a workspace itself.
 #
 # Ownership. The registry <run>/workers.json records the canonical run path; a registry whose path is
-# not --run is refused. Herdr reuses ids, so a stored pane is the worker's only while Herdr shows it with
-# the recorded terminal_id in the recorded workspace, and a mode B pane only while it hosts the recorded
-# agent; a process group is the worker's only while its leader has the recorded start time. Agent names
-# carry the run: <run slug>-<4 hex of the run path>-<id>-<harness>, at most 32 characters.
+# not --run is refused. A stored pane is the worker's only while Herdr shows it with the recorded
+# terminal_id in the recorded workspace, and a mode B pane only while it hosts the recorded agent; a
+# process group is the worker's only while its leader has the recorded start time, checked again
+# before every delayed signal. Agent names carry the run: <run slug>-<4 hex of the run path>-<id>-<harness>,
+# at most 32 characters.
 #
 # Lifecycle (the registry's state). Mode A: starting, running, then finished (exit record, no stop
 # signal), stopped (exit record after a closed pane, Ctrl+C or TERM) or lost (the supervisor died
 # without a record). Mode B: starting, ready, working, reported (this turn's report is in), settled (the turn
-# ended without it), blocked (a dialog), gone. Then closed. closed is final; finished, stopped, lost and
-# gone change only to closed. `state` sets the mark Herdr shows (registry: shown), not the lifecycle.
+# ended without it), blocked (a dialog), gone. Then closing, then closed. closed is final; closing,
+# finished, stopped, lost and gone change only to closing or closed. `state` sets the mark Herdr shows
+# (registry: shown), not the lifecycle.
+#
+# Known limits (one developer's tool on one machine; no service manager, no cgroups):
+# - A supervisor killed by hand, then its pane closed while no wait runs: the worker runs on until the
+#   next wait or close on it stops its group (status shows it running, supervisor_alive false,
+#   pane_present false). Its group is the pgid in out/<id>.started.
+# - Herdr doesn't reuse closed pane ids, so a stored pane is trusted once it exists with its terminal.
+# - An exit record that can't be written (a full disk) makes a finished worker lost; its log still
+#   holds the result. A worker that exits in the same instant its pane closes may be recorded stopped.
+# - One conductor prompts a mode B agent at a time; concurrent prompt calls for one worker aren't supported.
 #
 # Every call prints exactly one JSON object on stdout; "ok" is true exactly when the exit status is 0.
 # Exit status:
@@ -51,11 +68,13 @@
 #   1  Herdr or internal error (error.detail holds Herdr's error), or close could not stop a worker.
 #   2  not inside Herdr (HERDR_ENV is not 1) or a tool missing: dispatch with background Bash instead.
 #   3  timeout, nothing changed; start/ready: the agent is not ready yet (no dialog).
-#   4  gone or stopped: the pane or agent is gone, or the mode A worker was stopped by a signal.
+#   4  gone or stopped: the pane or agent is gone, the mode A worker was stopped by a signal, or the
+#      worker is closing.
 #   5  mode B agent at a dialog: the JSON holds the visible screen.
 #   6  mode B agent settled without writing this turn's report.
 #   7  mode A worker lost: its supervisor died without an exit record; the exit code is unknown.
-#   64 usage error, unknown or duplicate id, closed worker, or a registry from another run.
+#   64 usage error, unknown or duplicate id, closed worker, a wait after an undelivered prompt, or a
+#      registry from another run.
 set -Eeuo pipefail
 
 if [ "${HERDR_ENV:-}" != 1 ]; then
@@ -82,17 +101,22 @@ GRACE=5   # seconds between TERM and KILL
 # subshell's error is never lost and never printed twice.
 
 MAINPID=$BASHPID
-FAILF=$(mktemp "${TMPDIR:-/tmp}/herdr-worker.XXXXXX")
-EMITTED=0
+FAILF="" EMITTED=0 HCALL_EF=""
 CLEANUP_PANE=""   # a pane this call created and has not handed over yet: closed on failure
 CREATING=0        # a create call is under way: on failure, its pane is read from HOUT
 CLEANUP_PGID="" CLEANUP_LSTART=""
 
 on_exit() {
   [ "$EMITTED" = 1 ] || printf '%s\n' '{"ok":false,"error":{"code":"internal","message":"exited without a result"}}'
-  rm -f "$FAILF"
+  [ -z "$FAILF" ] || rm -f "$FAILF"
+  [ -z "$HCALL_EF" ] || rm -f "$HCALL_EF"   # a Herdr call cut short by a signal
 }
 trap on_exit EXIT
+FAILF=$(mktemp "${TMPDIR:-/tmp}/herdr-worker.XXXXXX" 2> /dev/null) || {
+  jq -cn --arg d "${TMPDIR:-/tmp}" '{ok: false, error: {code: "tmp_unwritable", message: ("cannot create a temp file in " + $d)}}' &&
+    EMITTED=1
+  exit 1
+}
 
 error_json() {  # error_json CODE MESSAGE [DETAIL_JSON]
   jq -cn --arg c "$1" --arg m "$2" --argjson d "${3:-null}" \
@@ -135,6 +159,11 @@ emit() {  # emit EXIT OBJECT: print the call's result, with ok set from EXIT, an
 as_json() { jq -c . <<< "$1" 2> /dev/null || jq -cn --arg t "$1" '$t'; }
 now() { date -Iseconds; }
 now_ms() { date +%s%3N; }
+nap() {  # nap MS DEADLINE_MS: sleep MS, but never past the deadline
+  local ms=$1 left=$(($2 - $(now_ms)))
+  ((ms <= left)) || ms=$((left > 0 ? left : 0))
+  sleep "$((ms / 1000)).$(printf '%03d' $((ms % 1000)))"
+}
 
 # ---- Herdr calls
 
@@ -142,13 +171,14 @@ HOUT="" HERR=""
 hcall() {  # hcall ARGS...: herdr ARGS; stdout in HOUT, or stderr in HERR and status 1
   local ef
   ef=$(mktemp "${TMPDIR:-/tmp}/herdr-worker.XXXXXX")
+  HCALL_EF=$ef
   if HOUT=$("$HERDR_BIN" "$@" 2> "$ef"); then
     HERR=""
-    rm -f "$ef"
+    rm -f "$ef"; HCALL_EF=""
     return 0
   fi
   HERR=$(< "$ef")
-  rm -f "$ef"
+  rm -f "$ef"; HCALL_EF=""
   [ -n "$HERR" ] || HERR="{\"error\":{\"code\":\"no_output\",\"message\":\"herdr $1 $2 failed\"}}"
   return 1
 }
@@ -294,16 +324,24 @@ update_worker() {  # update_worker PATCH [jq options...]: merge PATCH (evaluated
   reg_apply --arg id "$ID" "$@" '(.workers[] | select(.id == $id)) |= (. + ('"$patch"'))'
   reload_worker
 }
+lifecycle() {  # lifecycle PATCH: the filter moving worker $id to state $new with PATCH, if the lifecycle allows
+  printf '%s' '(.workers[] | select(.id == $id)) |=
+    (if .state == "closed"
+        or (($new | IN("closing", "closed") | not)
+            and (.state == "closing" or (.state != $new and (.state | IN("finished", "stopped", "lost", "gone")))))
+     then .
+     else . + ('"$1"') + {state: $new} end)'
+}
 transition() {  # transition NEW PATCH [jq options...]: move to state NEW and merge PATCH, if the lifecycle allows
   local new=$1 patch=$2
   shift 2
-  reg_apply --arg id "$ID" --arg new "$new" "$@" '
-    (.workers[] | select(.id == $id)) |=
-      (if .state == "closed"
-          or (.state != $new and $new != "closed" and (.state | IN("finished", "stopped", "lost", "gone")))
-       then .
-       else . + ('"$patch"') + {state: $new} end)'
+  reg_apply --arg id "$ID" --arg new "$new" "$@" "$(lifecycle "$patch")"
   reload_worker
+}
+transition_try() {  # transition_try NEW PATCH [jq options...]: as transition, for failure paths: never fails
+  local new=$1 patch=$2
+  shift 2
+  reg_try --arg id "$ID" --arg new "$new" "$@" "$(lifecycle "$patch")" || true
 }
 public() { jq -c 'del(.token, .report_snapshot)' <<< "$W"; }
 
@@ -423,6 +461,7 @@ stop_group() {  # stop_group PGID LEADER_START: STOPPED = not_running, stopped, 
     if ! group_ours "$1" "$2"; then STOPPED=stopped; return 0; fi
     sleep 0.1
   done
+  if ! group_ours "$1" "$2"; then STOPPED=stopped; return 0; fi   # checked again just before the delayed KILL
   kill -KILL -- "-$1" 2> /dev/null || true
   for ((i = 0; i < 30; i++)); do
     if ! group_ours "$1" "$2"; then STOPPED=killed; return 0; fi
@@ -437,11 +476,17 @@ cleanup_after_failure() {  # a failed launch or start leaves no pane and no work
     pane=$(jq -r '.result.root_pane.pane_id // empty' <<< "$HOUT" 2> /dev/null || true)
   fi
   [ -n "$pane" ] || return 0
+  local closed=0
+  STOPPED=""
   [ -z "$CLEANUP_PGID" ] || stop_group "$CLEANUP_PGID" "$CLEANUP_LSTART"
-  "$HERDR_BIN" pane close "$pane" > /dev/null 2>&1
-  [ -z "${REG:-}" ] || [ -z "$ID" ] ||
-    reg_try --arg id "$ID" --arg t "$(now)" --arg m "$1" \
-      '(.workers[] | select(.id == $id)) |= (. + {state: "closed", closed_at: $t, error: $m})'
+  if "$HERDR_BIN" pane close "$pane" > /dev/null 2>&1; then closed=1; fi
+  [ -n "${REG:-}" ] && [ -n "$ID" ] || return 0
+  # closed only when the pane is closed and the worker stopped; else closing, which a later close finishes.
+  if [ "$closed" = 1 ] && [ "$STOPPED" != survived ]; then
+    transition_try closed '{closed_at: $t, error: $m}' --arg t "$(now)" --arg m "$1"
+  else
+    transition_try closing '{error: $m}' --arg m "$1"
+  fi
 }
 
 # ---- mode A
@@ -470,21 +515,9 @@ write_runner() {  # the pane's runner out/<id>.sh and the worker's supervisor ou
 # the background of a script, this shell ignores SIGINT and cannot trap it, hence SIGUSR1.
 set -u
 view_pid=$1 view_start=$2
-w="" sig="" killer="" watcher="" reaped=""
+w="" lstart="" sig="" killer="" kstart="" watcher="" wstart="" reaped=""
 pfield() { awk -v n="$2" '{ sub(/^.*\) /, ""); print $n }' "/proc/$1/stat" 2> /dev/null; }
-stop() {
-  [ -z "$reaped" ] || return 0
-  [ -n "$sig" ] || sig=$1
-  [ -n "$w" ] || return 0
-  kill -TERM -- "-$w" 2> /dev/null
-  if [ -z "$killer" ]; then
-    (trap - USR1 TERM HUP; sleep "$grace"; kill -KILL -- "-$w" 2> /dev/null) &
-    killer=$!
-  fi
-}
-trap 'stop HUP' HUP
-trap 'stop INT' USR1
-trap 'stop TERM' TERM
+self_start=$(pfield $$ 20)
 group_left() {  # a member of the worker's group that has not exited
   local p
   for p in $(pgrep -g "$w" -s "$w" 2> /dev/null); do
@@ -492,6 +525,29 @@ group_left() {  # a member of the worker's group that has not exited
   done
   return 1
 }
+ours() {  # the worker's group is still the one started: its leader, if alive, has the recorded start time
+  local st
+  st=$(pfield "$w" 20)
+  [ -z "$st" ] || [ "$st" = "$lstart" ] || return 1
+  group_left
+}
+kill_own() {  # kill_own PID START: signal one of this shell's helpers only while it is still that process
+  [ -n "$1" ] && [ "$(pfield "$1" 20)" = "$2" ] && kill "$1" 2> /dev/null
+}
+stop() {
+  [ -z "$reaped" ] || return 0
+  [ -n "$sig" ] || sig=$1
+  [ -n "$w" ] && [ -n "$lstart" ] || return 0   # not started yet: the start below sees sig and stops it
+  ours && kill -TERM -- "-$w" 2> /dev/null
+  if [ -z "$killer" ]; then
+    (trap - USR1 TERM HUP; sleep "$grace"; ours && kill -KILL -- "-$w" 2> /dev/null) &
+    killer=$!
+    kstart=$(pfield "$killer" 20)
+  fi
+}
+trap 'stop HUP' HUP
+trap 'stop INT' USR1
+trap 'stop TERM' TERM
 cd "$cwd" || exit 1
 if [ -n "$errf" ]; then
   setsid -w bash "$cmd" < /dev/null >> "$log" 2> "$errf" &
@@ -508,9 +564,10 @@ printf '{"token":"%s","supervisor_pid":%s,"supervisor_start":"%s","pgid":%s,"lea
 (
   trap - USR1 TERM HUP
   while [ "$(pfield "$view_pid" 20)" = "$view_start" ] && [ "$(pfield "$view_pid" 1)" != Z ]; do sleep 1; done
-  kill -HUP $$
+  [ "$(pfield $$ 20)" = "$self_start" ] && kill -HUP $$
 ) &
 watcher=$!
+wstart=$(pfield "$watcher" 20)
 # Reap the leader. wait -p names the pid that ended; a trapped signal interrupts wait and leaves the
 # variable unset, so wait again until the leader itself is reaped.
 while :; do
@@ -521,19 +578,19 @@ while :; do
   if [ "$s" = 127 ]; then s=""; break; fi   # no longer this shell's child: its status is unknown
 done
 reaped=1
-kill "$watcher" 2> /dev/null
+kill_own "$watcher" "$wstart"
 # What the worker left in its group is stopped too: a finished worker leaves nothing running.
 stray=false
-if group_left; then
+if ours; then
   stray=true
   kill -TERM -- "-$w" 2> /dev/null
-  i=0; while group_left && [ $i -lt $((grace * 10)) ]; do sleep 0.1; i=$((i + 1)); done
-  kill -KILL -- "-$w" 2> /dev/null
-  i=0; while group_left && [ $i -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
+  i=0; while ours && [ $i -lt $((grace * 10)) ]; do sleep 0.1; i=$((i + 1)); done
+  ours && kill -KILL -- "-$w" 2> /dev/null
+  i=0; while ours && [ $i -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
 fi
 cleared=true
-group_left && cleared=false
-[ -z "$killer" ] || kill "$killer" 2> /dev/null
+ours && cleared=false
+kill_own "$killer" "$kstart"
 st=null sj=null
 [ -z "$s" ] || st=$s
 [ -z "$sig" ] || sj="\"$sig\""
@@ -553,17 +610,18 @@ BODY
 # supervisor has written the exit record prints the marker line, which only wakes a waiting
 # conductor. Ctrl+C or TERM here stops the worker through the supervisor; a closed pane does too.
 set -u
-s="" w="" t=""
-fwd() { [ -z "$s" ] || kill -"$1" "$s" 2> /dev/null; }
+s="" ss="" w="" t=""
+pstart() { awk '{ sub(/^.*\) /, ""); print $20 }' "/proc/$1/stat" 2> /dev/null; }
+fwd() { [ -n "$s" ] && [ "$(pstart "$s")" = "$ss" ] && kill -"$1" "$s" 2> /dev/null; }   # the supervisor only
 trap 'fwd HUP; exit 0' HUP
 trap 'fwd USR1' INT
 trap 'fwd TERM' TERM
-pstart() { awk '{ sub(/^.*\) /, ""); print $20 }' "/proc/$1/stat" 2> /dev/null; }
 cd "$cwd" || exit 1
 : > "$log"
 unset HERDR_ENV HERDR_PANE_ID
 setsid bash "$sup" "$$" "$(pstart $$)" < /dev/null > "$suplog" 2>&1 &
 s=$!
+ss=$(pstart "$s")
 i=0
 while [ ! -s "$pidf" ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
 [ ! -s "$pidf" ] || read -r w _ < "$pidf"
@@ -660,7 +718,7 @@ emit_outcome() {  # the worker's recorded outcome as wait's result
   case $(wf state) in
     finished) ex=0 ;;
     lost) ex=7 ;;
-    *) ex=4 ;;   # stopped, or closed while this wait ran
+    *) ex=4 ;;   # stopped, or closing or closed while this wait ran
   esac
   emit "$ex" "$(jq -c --argjson g "$gone" \
     '{id, state, exit_code, stop_signal, timed_out: false, pane_gone: $g, out_log}
@@ -674,7 +732,7 @@ wait_a() {
   re="(?m)^${MARK}${ID} exit=\\S+ $(wf token)\$"
   while :; do
     reload_worker
-    case $(wf state) in finished|stopped|lost|closed) emit_outcome ;; esac
+    case $(wf state) in finished|stopped|lost|closing|closed) emit_outcome ;; esac
     if read_exit_record; then record_outcome; emit_outcome; fi
     read_started || true
     local present=0
@@ -715,7 +773,7 @@ wait_a() {
         case $(herr_code) in timeout|pane_not_found) ;; *) herdr_fail pane wait-output ;; esac
       fi
     else
-      sleep "$([ "$marker_seen" = 1 ] && echo 2 || echo 1)"
+      nap "$([ "$marker_seen" = 1 ] && echo 2000 || echo 1000)" "$deadline"
     fi
   done
 }
@@ -803,8 +861,8 @@ report_fresh() {  # the report is non-empty and was written during the current t
 
 emit_b() {  # emit_b EXIT [SCREEN]: a mode B worker's state as the call's result
   emit "$1" "$(jq -c --arg st "${AGENT_STATUS:-unknown}" --arg sc "${2:-}" \
-    '{id, agent_name, agent_status: $st, state, turn, report_turn, report,
-      report_ready: (.turn > 0 and .report_turn == .turn), session_id}
+    '{id, agent_name, agent_status: $st, state, turn, delivered, report_turn, report,
+      report_ready: (.turn > 0 and .report_turn == .turn and .delivered != false), session_id}
      + (if $sc == "" then {} else {screen: $sc} end)' <<< "$W")"
 }
 gone_b() { transition gone '{}'; AGENT_STATUS=gone; emit_b 4; }
@@ -840,11 +898,11 @@ startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as r
     esac
     left=$((${1} - $(now_ms)))
     if [ "$left" -lt 100 ]; then
-      transition starting '{}'
+      [ "$(wf turn)" != 0 ] || transition starting '{}'
       emit_b 3 "$(screen_text | tail -n 25)"
     fi
     if [ "$AGENT_STATUS" = absent ]; then
-      sleep 1   # Herdr has not seen the agent in its pane yet
+      nap 1000 "$1"   # Herdr has not seen the agent in its pane yet
     elif ! hcall agent wait "$(wf pane_id)" --until idle --until done --until blocked --timeout "$((left < 30000 ? left : 30000))"; then
       case $(herr_code) in timeout|agent_not_found|pane_not_found) ;; *) herdr_fail agent wait ;; esac
     fi
@@ -861,7 +919,7 @@ settle_b() {  # settle_b DEADLINE_MS: after a delivered prompt, until the turn e
       idle|done)
         if report_fresh; then transition reported '{report_turn: .turn}'; emit_b 0; fi
         # An early idle can come before the turn's work: look once more after a pause.
-        if [ "$rechecked" = 0 ]; then rechecked=1; sleep 3; continue; fi
+        if [ "$rechecked" = 0 ]; then rechecked=1; nap 3000 "$1"; continue; fi
         transition settled '{}'
         emit_b 6 "$(screen_text | tail -n 25)" ;;
     esac
@@ -906,7 +964,7 @@ cmd_start() {
   entry=$(jq -cn --arg id "$ID" --arg label "$LABEL" --arg k "$KIND" --arg name "$name" --arg cwd "$CWD" \
     --arg report "$REPORT" --arg t "$(now)" \
     '{id: $id, label: $label, harness: $k, mode: "B", agent_name: $name, checkout: $cwd, report: $report,
-      session_id: null, state: "starting", turn: 0, report_turn: null, report_snapshot: null,
+      session_id: null, state: "starting", turn: 0, delivered: null, report_turn: null, report_snapshot: null,
       prompted_at: null, started_at: $t}')
 
   lock
@@ -928,8 +986,9 @@ cmd_start() {
 mode_b_worker() {  # the current worker is an open mode B worker
   [ "$(wf mode)" = B ] || fail 64 usage "$SUB is for mode B workers; $ID is mode A"
   [ "$(wf state)" != closed ] || fail 64 closed "worker $ID is closed"
-  [ "$(wf state)" != gone ] || { AGENT_STATUS=gone; emit_b 4; }
+  case $(wf state) in gone|closing) AGENT_STATUS=gone; emit_b 4 ;; esac
 }
+delivered() { jq -r .delivered <<< "$W"; }   # true, false (the last prompt was refused) or null (none yet)
 
 cmd_ready() {
   require --run "$RUN" --id "$ID"
@@ -937,7 +996,8 @@ cmd_ready() {
   parse_timeout 60000
   load_worker
   mode_b_worker
-  [ "$(wf turn)" = 0 ] || fail 64 usage "ready is for the first prompt; after a delivered prompt use wait"
+  [ "$(delivered)" != true ] ||
+    fail 64 usage "ready is for an agent with no delivered prompt (the first, or one refused at a dialog); after a delivered prompt use wait"
   startup_settle "$(($(now_ms) + T))"
 }
 
@@ -949,7 +1009,7 @@ cmd_keys() {
   agent_check || gone_b
   local keys
   read -ra keys <<< "$KEYS"
-  h pane send-keys "$(wf pane_id)" "${keys[@]}"
+  h agent send-keys "$(wf agent_name)" "${keys[@]}"   # by name: only the recorded agent gets them
   emit 0 "$(jq -c --arg k "$KEYS" '{id, agent_name, state, keys: $k}' <<< "$W")"
 }
 
@@ -961,23 +1021,30 @@ cmd_prompt() {
   mode_b_worker
   [ -f "$TEXT_FILE" ] || fail 64 usage "--text-file not found: $TEXT_FILE"
   agent_check || gone_b
+  local deadline before
+  # A prompt refused before it is sent opens no turn: the turn, its snapshot and its time go back to
+  # before, with delivered false, so no wait can take an earlier turn's report for this prompt's.
+  before=$(jq -c '{turn, report_snapshot, prompted_at} + {delivered: false}' <<< "$W")
   case $AGENT_STATUS in
-    blocked) blocked_b ;;
+    blocked)
+      if [ "$(delivered)" = true ] && [[ $(wf state) =~ ^(working|blocked)$ ]]; then
+        fail 64 turn_open "turn $(wf turn) is still open, at a dialog: answer it, then wait"
+      fi
+      transition blocked '$b' --argjson b "$before"; AGENT_STATUS=blocked; emit_b 5 "$(screen_text)" ;;
     working) fail 64 agent_working "agent $(wf agent_name) is still working: wait for its turn to end first" ;;
   esac
-  local deadline before
   deadline=$(($(now_ms) + T))
-  before=$(jq -c '{turn, report_snapshot, prompted_at}' <<< "$W")
   # The turn starts before the prompt goes out, so a report written by this turn always counts.
-  transition working '{turn: (.turn + 1), report_snapshot: $s, prompted_at: $t}' --arg s "$(report_sig)" --arg t "$(now)"
-  if ! hcall agent prompt "$(wf pane_id)" "$(< "$TEXT_FILE")" --wait --timeout "$T"; then
+  transition working '{turn: (.turn + 1), delivered: true, report_snapshot: $s, prompted_at: $t}' \
+    --arg s "$(report_sig)" --arg t "$(now)"
+  if ! hcall agent prompt "$(wf agent_name)" "$(< "$TEXT_FILE")" --wait --timeout "$T"; then
     case $(herr_code) in
-      agent_blocked|agent_not_ready)  # refused before it was sent: the turn did not start
+      agent_blocked|agent_not_ready)  # refused before it was sent
         transition blocked '$b' --argjson b "$before"
         AGENT_STATUS=blocked
         emit_b 5 "$(screen_text)" ;;
       timeout) agent_check || true; emit_b 3 ;;
-      agent_not_found|pane_not_found) gone_b ;;
+      agent_not_found|pane_not_found) transition gone '$b' --argjson b "$before"; AGENT_STATUS=gone; emit_b 4 ;;
       agent_prompt_stalled) ;;   # sent, but no work seen yet: settle_b looks
       *) herdr_fail agent prompt ;;
     esac
@@ -987,6 +1054,8 @@ cmd_prompt() {
 
 wait_b() {
   [ "$(wf turn)" -gt 0 ] || fail 64 not_prompted "wait follows a delivered prompt; before the first prompt use ready"
+  [ "$(delivered)" != false ] ||
+    fail 64 not_delivered "the last prompt was refused before delivery: answer the dialog, run ready, then send the same prompt again"
   parse_timeout 7000000
   settle_b "$(($(now_ms) + T))"
 }
@@ -1052,7 +1121,7 @@ cmd_state() {
   case $STATE in working|blocked|idle) ;; *) fail 64 usage "--state must be working, blocked or idle" ;; esac
   load_worker
   [ "$(wf mode)" = A ] || fail 64 usage "a mode B agent reports its own state to Herdr"
-  [ "$(wf state)" != closed ] || fail 64 closed "worker $ID is closed"
+  case $(wf state) in closed|closing) fail 64 closed "worker $ID is $(wf state)" ;; esac
   pane_present || emit 4 "$(jq -c '{id, state, pane_gone: true}' <<< "$W")"
   report "$(wf pane_id)" "$STATE" "$MESSAGE" || herdr_fail pane report-agent
   update_worker '{shown: {state: $s, message: $m, at: $t}}' --arg s "$STATE" --arg m "$MESSAGE" --arg t "$(now)"
@@ -1060,43 +1129,74 @@ cmd_state() {
 }
 
 CLOSE_RESULT=""
+close_pane() {  # close the worker's pane if Herdr still shows it, and confirm it is gone; PANE_CLOSED
+  local i
+  PANE_CLOSED=false
+  pane_present || return 0
+  if hcall pane close "$(wf pane_id)"; then
+    PANE_CLOSED=true
+  else
+    [ "$(herr_code)" = pane_not_found ] || herdr_fail pane close
+  fi
+  for ((i = 0; i < 20; i++)); do pane_present || return 0; sleep 0.1; done
+  fail 1 pane_not_closed "pane $(wf pane_id) is still open after pane close; the worker stays closing"
+}
 close_one() {  # stop and close the current worker; CLOSE_RESULT holds its result object
-  local pane_closed=false worker=not_running present=0 pg="" ls="" note=null was_live=0 already=false
+  local worker=not_running pg="" ls="" note=null was_live=0 already=false i
+  PANE_CLOSED=false
   if [ "$(wf state)" = closed ]; then
     already=true
   else
-    pane_present && present=1
+    # closing first: a wait that sees the worker end from here on reports the close, not a finish, and a
+    # close that fails or is cut short leaves closing, so the next close runs all of this again.
+    transition closing '{closing_at: $t}' --arg t "$(now)"
     if [ "$(wf mode)" = A ]; then
       group_of_worker
-      pg=$PG ls=$LS
-    elif [ "$present" = 1 ] && hcall pane process-info --pane "$(wf pane_id)"; then
-      # A mode B agent runs as the shell's foreground job, in a group of its own.
-      pg=$(jq -r '.result.process_info | if .foreground_process_group_id == .shell_pid then empty
-                  else .foreground_process_group_id end' <<< "$HOUT")
-      [ -z "$pg" ] || ls=$(proc_field "$pg" 20)
-    fi
-    group_ours "$pg" "$ls" && was_live=1
-    # Closed first: a wait that sees the worker end from here on reports the close, not a finish.
-    transition closed '{closed_at: $t}' --arg t "$(now)"
-    if [ "$present" = 1 ]; then
-      if hcall pane close "$(wf pane_id)"; then
-        pane_closed=true
-      else
-        [ "$(herr_code)" = pane_not_found ] || herdr_fail pane close
+      if [ -z "$PG" ] && [ ! -s "$OUT/$ID.exit" ] && pane_present; then
+        # Still starting: its supervisor records the group moments after the runner starts.
+        for ((i = 0; i < 50; i++)); do read_started && break; sleep 0.1; done
+        group_of_worker
       fi
+      group_ours "$PG" "$LS" && was_live=1
+      close_pane
+      # The supervisor may have recorded the group just now. The closed pane stops the worker through
+      # it; stop_group checks the group, and finishes the stop if needed.
+      [ -n "$PG" ] || group_of_worker
+      stop_group "$PG" "$LS"
+      worker=$STOPPED
+      [ "$worker" != not_running ] || [ "$was_live" = 0 ] || worker=stopped
+    else
+      # Mode B: never a signal. While the pane hosts the recorded agent, note its process group (to
+      # check, not to signal), send ctrl+c to the agent by name, and close the pane, which ends what
+      # runs there. A pane no longer hosting it is closed with nothing signalled.
+      worker=agent_gone
+      if agent_check; then
+        worker=stopped
+        if hcall pane process-info --pane "$(wf pane_id)"; then
+          pg=$(jq -r '.result.process_info | if .foreground_process_group_id == .shell_pid then empty
+                      else .foreground_process_group_id end' <<< "$HOUT")
+          [ -z "$pg" ] || ls=$(proc_field "$pg" 20)
+        fi
+        hcall agent send-keys "$(wf agent_name)" ctrl+c ctrl+c || true
+        for ((i = 0; i < 30; i++)); do group_ours "$pg" "$ls" || break; sleep 0.1; done
+      fi
+      close_pane
+      for ((i = 0; i < 50; i++)); do group_ours "$pg" "$ls" || break; sleep 0.1; done
+      ! group_ours "$pg" "$ls" || worker=survived
     fi
-    # The closed pane stops the worker through its supervisor; stop_group checks, and finishes it.
-    stop_group "$pg" "$ls"
-    worker=$STOPPED
-    [ "$worker" != not_running ] || [ "$was_live" = 0 ] || worker=stopped
-    update_worker '{close: {pane_closed: $p, worker: $w}}' --argjson p "$pane_closed" --arg w "$worker"
+    if [ "$worker" = survived ]; then
+      update_worker '{close: {pane_closed: $p, worker: $w}}' --argjson p "$PANE_CLOSED" --arg w "$worker"
+    else
+      transition closed '{closed_at: $t, close: {pane_closed: $p, worker: $w}}' \
+        --arg t "$(now)" --argjson p "$PANE_CLOSED" --arg w "$worker"
+    fi
   fi
   if [ "$(wf harness)" = codex ]; then
     note=$(jq -cn --arg py "$SCRIPT_DIR/cleanup-codex-companion.py" --arg ws "$(wf checkout)" \
       '{argv: ["python3", $py, "--workspace", $ws, "--execute"],
         note: "its companion runtime outlives the pane: run this once its result is collected"}')
   fi
-  CLOSE_RESULT=$(jq -c --argjson p "$pane_closed" --arg w "$worker" --argjson n "$note" --argjson a "$already" \
+  CLOSE_RESULT=$(jq -c --argjson p "$PANE_CLOSED" --arg w "$worker" --argjson n "$note" --argjson a "$already" \
     '{id, state, pane_id, pane_closed: $p, worker: $w} + (if $a then {already_closed: true} else {} end)
      + (if $n == null then {} else {codex_cleanup: $n} end)' <<< "$W")
 }

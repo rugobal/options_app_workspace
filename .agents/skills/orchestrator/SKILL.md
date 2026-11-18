@@ -96,7 +96,9 @@ A Codex worker in a linked worktree leaves the commit to you. Its sandbox writes
 
 Each running worker has its own checkout, made by the project's worktree rules (root `AGENTS.md`).
 
-**Choose the route first.** When your shell has `HERDR_ENV=1` you run inside Herdr, the user's terminal workspace manager, and every worker runs in a Herdr tab the user can watch: the **Herdr route**. Otherwise, or when `herdr-worker.sh` exits 2, take the **background route**: Claude workers through the Agent tool, the others in background Bash. Then follow the provider's recipe for that route. Each correction or retry takes the next attempt number and keeps earlier attempts' files and IDs.
+**`workers.md` commands come first, on both routes.** When `workers.md` gives a command for a provider, that command is what either route runs, in place of the recipe below. Today both Claude kinds have one: headless `claude -p` with `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`, so they never go through the Agent tool. The recipes are the defaults for a provider `workers.md` gives no command for.
+
+**Choose the route first.** When your shell has `HERDR_ENV=1` you run inside Herdr, the user's terminal workspace manager, and every worker runs in a Herdr tab the user can watch: the **Herdr route**. Otherwise, or when `herdr-worker.sh` exits 2, take the **background route**: background Bash, or the Agent tool for a Claude worker `workers.md` gives no command for. Then follow the provider's recipe for that route. Each correction or retry takes the next attempt number and keeps earlier attempts' files and IDs.
 
 ### The providers
 
@@ -127,7 +129,7 @@ Record each path below in `rules.md` once per run. When a provider's requirement
 
 ### The background route
 
-Run the provider's command in background Bash (`run_in_background`), with absolute paths, and record Bash's background task ID; its exit wakes you. Codex: `> "<run>/out/<task>-<attempt>.txt" 2>&1`. DeepSeek and Antigravity: `> "<run>/out/<task>-<attempt>.json" 2> "<run>/out/<task>-<attempt>.err"`; the `.json` file is the result object.
+Run the provider's command in background Bash (`run_in_background`), with absolute paths, and record Bash's background task ID; its exit wakes you. Codex: `> "<run>/out/<task>-<attempt>.txt" 2>&1`. Headless Claude (`--output-format json`), DeepSeek and Antigravity: `> "<run>/out/<task>-<attempt>.json" 2> "<run>/out/<task>-<attempt>.err"`; the `.json` file is the result object.
 
 ### The Herdr route
 
@@ -135,13 +137,15 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
 
 **Mode A, the default: the headless worker in a tab.** Every provider.
 
-1. Write the provider's command, without output redirections, to `<run>/out/<task>-<attempt>.cmd`. A `workers.md` command for a provider replaces it; switch its `--output-format json` to `stream-json --verbose`.
+1. Write the provider's command (from `workers.md` when it gives one), without output redirections, to `<run>/out/<task>-<attempt>.cmd`. For headless Claude, switch `--output-format json` to `stream-json --verbose`.
 2. `"<herdr-worker>" launch --run "<run>" --id <task>-<attempt> --label "<label>" --cwd "<checkout>" --harness claude|codex|deepseek|agy --cmd-file "<run>/out/<task>-<attempt>.cmd"`. Output goes to `out/<id>.log`, stderr to `out/<id>.err` (Codex's goes into the log). For Codex, record the job ID now, as above.
 3. In background Bash with `timeout` 7200000: `"<herdr-worker>" wait --run "<run>" --id <id>`. Record the id and the wait's task ID. Its exit wakes you:
    - 0: the worker ended by itself; its own status is `exit_code`.
    - 3: the wait's own limit, just under two hours, passed. The worker is unaffected; start the wait again.
    - 4: the worker was stopped: its tab closed, Ctrl+C in it, or `close`. Treat it as a stall ([section 5](#5-nudge)).
    - 7: the worker was lost: what supervised it died, so its exit code is unknown. Check its checkout and log, then treat it as a stall.
+
+   One known limit: a worker whose supervisor was killed by hand and whose tab was then closed while no `wait` ran keeps running, unsupervised, until the next `wait` or `close` on it stops it. `status` shows it with `supervisor_alive` and `pane_present` both false; `close` it.
 
 **Mode B, on request: an interactive agent the user can steer.** Choose it when the user may want to watch a worker and type into it. It takes Claude (`--kind claude`), DeepSeek through Pi (`--kind pi`) and Antigravity (`--kind agy`). Codex stays in mode A: interactive Codex stops at a trust dialog in every new worktree.
 
@@ -153,14 +157,15 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
 3. On 5: answer a trust dialog for a checkout you made with `"<herdr-worker>" keys --run "<run>" --id <id> --keys "<keys>"` (Herdr key names, such as `down enter`; read `screen` for the choice). Every other dialog is the user's to answer in the tab. Then `ready` again. Send the first prompt only after `start` or `ready` exits 0.
 4. Write "Read and follow the brief at `<brief>`. Write your report to `<run>/out/<id>.md`, then end your turn." to `<run>/out/<id>.prompt`. In background Bash with `timeout` 7200000: `"<herdr-worker>" prompt --run "<run>" --id <id> --text-file "<run>/out/<id>.prompt"`. Each prompt is one turn; record `session_id` from its JSON. Its exit wakes you:
    - 0: the agent finished its turn and wrote the report during it (`report_turn` equals `turn`). A report from an earlier turn or attempt never counts.
-   - 5: the agent waits at a dialog mid-turn. Answer it as in step 3, then `"<herdr-worker>" wait --run "<run>" --id <id>` in background Bash, which exits like `prompt`. `wait` is only for a prompt already delivered.
+   - 5 with `delivered: false`: the agent was at a dialog, so the prompt was refused and no turn opened. Answer the dialog as in step 3 or leave it to the user, run `ready` until it exits 0, then send the same prompt again. `wait` refuses here (64 `not_delivered`).
+   - 5 with `delivered: true`: the agent waits at a dialog mid-turn. Answer it as in step 3, then `"<herdr-worker>" wait --run "<run>" --id <id>` in background Bash, which exits like `prompt`. `wait` is only for a delivered prompt.
    - 6: the agent ended its turn without writing the report. Read `screen`, then `prompt` again with what remains.
    - 3: time is up and the turn is still going: `wait` again. 4: the agent or its tab is gone; treat it as a stall.
 
 ## 5. Nudge
 
 - **Inspect a Codex worker** for a suspected stall: `node "<companion>" status "<job-id>" --cwd "<checkout>" --json`. When a Claude session ends normally, the plugin stops only the Codex jobs in the session's own working directory. A worker in another checkout (every worktree worker), or any worker after a crash, can still be running. Look it up by its recorded ID, which also finds earlier sessions' jobs, then cancel it or let it finish.
-- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. Codex: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. DeepSeek: rerun the dispatch command with `--resume <session_id>`, a brief of what remains, and the same `--cwd`. Antigravity: the same, with `--resume <conversation_id>`. For a worker from an earlier session, start fresh with a brief that continues from the branch's state. On the Herdr route, a resume or rerun is a new `launch` with the next attempt number and the changed command, after you `close` the earlier attempt; a headless Claude worker resumes with `--resume <session_id>` in the same checkout, and a mode B worker takes another `prompt`.
+- **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. Codex: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. Headless Claude and DeepSeek: rerun the dispatch command with `--resume <session_id>`, a brief of what remains, and the same `--cwd`. Antigravity: the same, with `--resume <conversation_id>`. For a worker from an earlier session, start fresh with a brief that continues from the branch's state. On the Herdr route, a resume or rerun is a new `launch` with the next attempt number and the changed command, after you `close` the earlier attempt; a headless Claude worker resumes with `--resume <session_id>` in the same checkout, and a mode B worker takes another `prompt`.
 - **Usage limit**: wait for the reset, with a background Bash `sleep` that wakes you then, or switch provider when the mode allows (`mixed`, `auto`). In `claude` or `codex` mode, tell the user what is waiting and until when.
 - **Stall or provider error** (a crash, network failure, garbled output, or a worker far past its expected time with no new output): stop it and rerun with a fresh worker on the same tier. For Codex, cancel with `node "<companion>" cancel "<job-id>" --cwd "<checkout>" --json`: stopping Bash alone can leave the shared Codex background process working in the checkout. Confirm with `status` before replacing it. For DeepSeek, stopping the background Bash task stops the worker. For Antigravity, stopping it makes the wrapper stop its scope; when the wrapper was killed outright, stop the scope by its recorded name: `systemctl --user stop <scope>`. On the Herdr route, stopping the `wait` leaves the worker running; `"<herdr-worker>" close --run "<run>" --id <id>` stops it and closes its pane (for Codex, after the `cancel`).
 - **Fails its checks after one correction round**: a fresh worker one tier up, given the brief plus what went wrong. Already at frontier: a fresh frontier worker on the other provider when the mode allows; otherwise the user decides.
@@ -184,7 +189,7 @@ You are the reviewer. The worker's report is a claim; the checkout is the eviden
 
 Any review the project's route requires for this work also runs, as a worker's task. Routine defects go back to the same worker as a numbered list; material ones go to the user. Then integrate and update the ledger. After each integration, and after each compaction, check the handoff triggers: when one holds, follow the [orchestrator-handoff](../orchestrator-handoff/SKILL.md) skill instead of dispatching again. Otherwise dispatch whatever the integration unblocked.
 
-On the Herdr route, close an accepted task's worker: `"<herdr-worker>" close --run "<run>" --id <id>`. It stops the worker's process group, checks it is gone (exit 1 with `worker_survived` if not) and closes the worker's own pane; a pane the user split off beside it stays. A Codex worker's runtime outlives its pane, so the cleanup below still runs: `close` gives it as `codex_cleanup.argv`, the helper's argument list. When the run closes, `close --all` closes every worker's pane. Herdr removes a tab with its last pane and the workspace with its last tab, so panes the user opened in the run's workspace keep it open; the JSON lists them as `panes_not_in_registry`.
+On the Herdr route, close an accepted task's worker: `"<herdr-worker>" close --run "<run>" --id <id>`. It marks the worker `closing`, closes the worker's own pane and stops the worker (mode A: its process group, checked gone; mode B: through Herdr only, never by signal), and only then marks it `closed`. An exit 1 (`worker_survived`, or a Herdr error) leaves it `closing`; `close` it again. A pane the user split off beside it stays. A Codex worker's runtime outlives its pane, so the cleanup below still runs: `close` gives it as `codex_cleanup.argv`, the helper's argument list. When the run closes, `close --all` closes every worker's pane. Herdr removes a tab with its last pane and the workspace with its last tab, so panes the user opened in the run's workspace keep it open; the JSON lists them as `panes_not_in_registry`.
 
 Done when: every hunk is read, the focused tests pass on your rerun, the ledger row says accepted, and on the Herdr route the task's worker is closed.
 
