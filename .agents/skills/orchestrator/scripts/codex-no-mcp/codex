@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# codex: runs the next `codex` in PATH without the user's MCP servers and connectors.
+# codex: runs the next `codex` in PATH without the user's MCP servers and connectors, Codex's web tool
+# and image generation.
 #
 # The Codex companion starts `codex app-server` from PATH, so its workers get this wrapper with
 # `env -u CODEX_NO_MCP_ARGS PATH="<this folder>:$PATH"` in front of `node … codex-companion.mjs`. It
-# runs the real codex with a list's arguments (the -c pairs that turn the servers off) before the
+# runs the real codex with a list's arguments (the -c pairs that turn them off) before the
 # companion's own. The list is no-mcp.args beside this file, or the file CODEX_NO_MCP_ARGS names: a
-# task's edited copy that gives a server back, set on that one command line as an absolute path.
+# task's edited copy that gives a server or the web back, set on that one command line as an absolute path.
 # A list holds `-c` lines, each followed by its value line (one argument per line; a trailing CR is
 # dropped, empty lines are skipped). A list that can't be read, is empty, holds any other line or is
 # named by a relative path, or no other codex in PATH, exits 127 and runs nothing.

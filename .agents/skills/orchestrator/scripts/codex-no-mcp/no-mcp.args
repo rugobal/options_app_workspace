@@ -6,3 +6,7 @@ mcp_servers.tauri.enabled=false
 mcp_servers.node_repl.enabled=false
 -c
 features.apps=false
+-c
+web_search="disabled"
+-c
+features.image_generation=false
