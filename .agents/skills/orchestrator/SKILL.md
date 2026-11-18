@@ -88,7 +88,8 @@ Each brief names:
 - "Read `<path to rules.md>` first";
 - the task's tests: which to write, and its focused file list to run, each file named;
 - the commit expected, with its message;
-- what it needs from earlier tasks: commit hashes, decisions.
+- what it needs from earlier tasks: commit hashes, decisions;
+- for a Codex worker, companion or mode B: not to use the `codex_tui` tools, which act on the user's own Codex threads and worktrees.
 
 A companion Codex worker in a linked worktree leaves the commit to you (a mode B Codex builder commits itself: its arguments open the Git folders it needs, [mode B](#the-herdr-route)). Its sandbox writes only the checkout and `/tmp`, and the worktree's Git metadata lives under the main repo's `.git/worktrees/`, so its `git add` fails with "Read-only file system" on `index.lock`. Its brief has it leave the changes in the checkout, write the commit message, attribution line included, to a `/tmp` file the brief names, and write its test output under `/tmp`. You commit after checking ([section 6](#6-check-a-result)), with that message, so the commit carries the worker's attribution line.
 
@@ -105,10 +106,10 @@ Each running worker has its own checkout, made by the project's worktree rules (
 Record each path below in `rules.md` once per run. When a provider's requirement is missing, hold its tasks and say why.
 
 - **Claude.** Background route: the Agent tool with a fresh `general-purpose` agent (a fork ignores `model`), `model` from the pin or the tier, `effort` only when one is named, and the prompt "Read and follow the brief at `<path>`. It is your whole task; report back as it says." Record its agent ID. Herdr route: headless Claude Code, so it gets a tab: `cd "<checkout>" && claude -p --output-format stream-json --verbose --model <model> --permission-mode auto --permission-prompts none --strict-mcp-config < "<brief>"`, plus `--effort` when one is named. `--strict-mcp-config` keeps MCP servers such as a messaging bot with you. It commits itself, like a DeepSeek worker; record the `session_id` from its result.
-- **Codex.** Find the `codex@openai-codex` entry in `~/.claude/plugins/installed_plugins.json` that matches this session's scope and project, append `scripts/codex-companion.mjs` to its `installPath`, check the file exists, and record it as `<companion>`. Resolve [scripts/cleanup-codex-companion.py](scripts/cleanup-codex-companion.py) relative to this skill's directory and record it as `<cleanup>`. The command, with the effort from the pin or tier:
+- **Codex.** Find the `codex@openai-codex` entry in `~/.claude/plugins/installed_plugins.json` that matches this session's scope and project, append `scripts/codex-companion.mjs` to its `installPath`, check the file exists, and record it as `<companion>`. Resolve [scripts/cleanup-codex-companion.py](scripts/cleanup-codex-companion.py) relative to this skill's directory and record it as `<cleanup>`, and the folder [scripts/codex-no-mcp](scripts/codex-no-mcp/) as `<no-mcp>`. Every `node "<companion>"` call, a command from `workers.md` included, runs with `PATH="<no-mcp>:$PATH"` in front ([No MCP servers](#no-mcp-servers-for-codex)); `cancel` too, as it starts an app server of its own when the checkout has none. The command, with the effort from the pin or tier:
 
   ```
-  node "<companion>" task --fresh --write --effort <effort> --prompt-file "<brief>" --cwd "<checkout>"
+  PATH="<no-mcp>:$PATH" node "<companion>" task --fresh --write --effort <effort> --prompt-file "<brief>" --cwd "<checkout>"
   ```
 
   Leave off the companion's own `--background` flag, so the process ends when the task does. Right after dispatch, record the attempt's job ID (`task-…`): the checkout's newest job, from `node "<companion>" status --cwd "<checkout>" --json | jq -r '[.running[]?, .latestFinished, .recent[]?] | map(select(. != null)) | max_by(.createdAt) | .id'` (a checkout has one Codex worker at a time). If its `createdAt` is from before the dispatch, the job is not listed yet: look again at the next wake-up. The process's exit status is not the result: read the job's with `result` ([section 6](#6-check-a-result)). This is a **companion worker**, the Codex worker of the background route and of mode A; mode B runs the `codex` CLI itself, with no companion.
@@ -126,6 +127,28 @@ Record each path below in `rules.md` once per run. When a provider's requirement
   ```
 
   Record the systemd scope named on the first line of its stderr and the `conversation_id` of its result. The brief goes in as the prompt itself, so keep it under 120000 characters. The worker runs with every tool approved and commits itself. On Argon it takes the same frontier work as Claude and Codex workers. The wrapper's `--timeout` (default `3h`) is agy's own print-mode limit. agy and every process the worker starts run in that scope, and the wrapper stops the scope when agy exits or the wrapper is stopped, so nothing the worker started outlives it and its memory is released. Docker containers belong to dockerd, outside the scope: tests remove their own.
+
+### No MCP servers for Codex
+
+Codex workers run without the user's MCP servers and connectors (the owner's decision, 2026-11-18): Codex's sandbox holds shell commands only, and a server runs outside it with the user's network and files. [scripts/codex-no-mcp/no-mcp.args](scripts/codex-no-mcp/no-mcp.args) is the list of `-c` pairs that turn them off, one argument per line. It names the servers and plugins of the user's Codex config, so one added there later needs its own lines in that file.
+
+- **Companion workers** get the list from `<no-mcp>/codex`, which the `PATH` prefix puts before the real `codex`: the companion starts `codex app-server` from `PATH`, and the wrapper runs the real one with the list's pairs in front. A checkout's app server starts with its first task and keeps its arguments until you release that checkout ([section 6](#release-finished-codex-runtimes)), so release a checkout whose broker started without the prefix, or with another list, before dispatching there. Once per run, a few seconds after the first companion dispatch, read its app server's arguments; this takes no model turn:
+
+  ```
+  for p in $(pgrep -f ' app-server$'); do [ "$(readlink /proc/$p/cwd)" = "<checkout>" ] && tr '\0' '\n' < /proc/$p/cmdline; done
+  ```
+
+  It prints a `codex` path, the list's lines, then `app-server`. When `app-server` follows the path directly, or nothing prints twice a few seconds apart while the task runs, cancel the job, release the checkout and stop for the user.
+- **Mode B workers** take the list at the end of their args file, and their `/mcp` is checked there ([mode B](#the-herdr-route)).
+- **Giving a server back.** A task that needs one of these servers gets it back, limited to the tools it needs, in a copy of the list: `cp "<no-mcp>/no-mcp.args" "<run>/out/<task>.no-mcp.args"`, then edit the copy. A config server: replace its `enabled=false` line with `mcp_servers.<server>.enabled_tools=["<tool>"]`. A plugin's server: in the `plugins=` line, replace that plugin's `{enabled=false}` with `{mcp_servers={<server>={enabled_tools=["<tool>"]}}}`. Under `never`, Codex refuses a tool unless it is marked read-only, or marked both not destructive and closed-world. Approve a refused tool the task needs for that worker alone, one tool at a time, never the whole server, with two more lines:
+
+  ```
+  -c
+  mcp_servers.<server>.tools.<tool>.approval_mode="approve"
+  ```
+
+  For a plugin's server, put `tools={<tool>={approval_mode="approve"}}` beside its `enabled_tools` instead. A companion worker takes the copy with `CODEX_NO_MCP_ARGS="<copy>"` in front of every dispatch, its resume included, in a checkout released just before; release it again before the next task there. A mode B worker's args end with the copy in place of the list.
+- **`codex_tui`**, the Codex screen's own tools on the user's Codex threads and worktrees, has no off switch. Mode B workers have it, and every Codex brief says not to use it ([section 3](#3-brief-a-worker)).
 
 ### The background route
 
@@ -172,14 +195,6 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
      <common git dir>/logs
      --add-dir
      <run>/out/<id>
-     -c
-     plugins={"mongodb@mongodb-plugins"={enabled=false},"unified-computer-use@openai-bundled"={enabled=false}}
-     -c
-     mcp_servers.tauri.enabled=false
-     -c
-     mcp_servers.node_repl.enabled=false
-     -c
-     features.apps=false
      ```
 
      `<git dir>` is the worktree's own Git folder, `git -C "<checkout>" rev-parse --path-format=absolute --git-dir`, and `<common git dir>` the same with `--git-common-dir`. With those writable the builder runs `git add` and `git commit` in a linked worktree and commits itself, like a Claude worker; the repo's config and hooks stay read-only, and it has no network, as in mode A. Read-only reviewer, its TOML quotes part of the values:
@@ -195,28 +210,11 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
      default_permissions="reviewer"
      -c
      permissions.reviewer.filesystem={":root"="read","<run>/out/<id>"="write"}
-     -c
-     plugins={"mongodb@mongodb-plugins"={enabled=false},"unified-computer-use@openai-bundled"={enabled=false}}
-     -c
-     mcp_servers.tauri.enabled=false
-     -c
-     mcp_servers.node_repl.enabled=false
-     -c
-     features.apps=false
      ```
 
      It reads everything, runs read-only commands, and writes only in `<run>/out/<id>`. The profile is its whole sandbox: a `--sandbox` flag would replace it.
 
-     Both sandboxes hold shell commands only: an MCP server runs outside them with the user's network and files. So both recipes end with the lines that turn off every MCP server and connector of the user's Codex (the owner's decision, 2026-11-18). Those lines name the servers and plugins of the user's Codex config, so one added there later needs a line of its own. Once per run, check the first Codex worker after `start` or `ready` exits 0 and before its first prompt; `/mcp` opens no turn: `herdr agent prompt "<agent_name>" "/mcp"` (`agent_name` from `start`'s JSON), then, about 3 s later, `herdr agent read "<agent_name>" --source visible`. Every server listed must read `disabled`, except `codex_tui` and a server the worker's own args give back (below), which lists only the tools its `enabled_tools` names; when another one doesn't, close the worker and stop for the user. `codex_tui` is the Codex screen's own (12 tools on the user's Codex threads and worktrees) and has no off switch.
-
-     A task that needs one of these servers gets it back in its own args, limited to the tools the task needs. A config server: replace its `enabled=false` line with `mcp_servers.<server>.enabled_tools=["<tool>"]`. A plugin's server: in the `plugins=` line, replace that plugin's `{enabled=false}` with `{mcp_servers={<server>={enabled_tools=["<tool>"]}}}`. Under `never`, Codex refuses a tool unless it is marked read-only, or marked both not destructive and closed-world. Approve a refused tool the task needs for that worker alone, one tool at a time, never the whole server:
-
-     ```
-     -c
-     mcp_servers.<server>.tools.<tool>.approval_mode="approve"
-     ```
-
-     For a plugin's server, put `tools={<tool>={approval_mode="approve"}}` beside its `enabled_tools`.
+     Both end with the no-MCP list ([No MCP servers](#no-mcp-servers-for-codex)), or a give-back task's copy of it: `{ echo; cat "<no-mcp>/no-mcp.args"; } >> "<run>/out/<id>.args"`. The empty line `echo` adds is skipped, and it keeps the list's first line off a last line written without its newline. Once per run, check the first mode B Codex worker after `start` or `ready` exits 0 and before its first prompt; `/mcp` opens no turn: `herdr agent prompt "<agent_name>" "/mcp"` (`agent_name` from `start`'s JSON), then, about 3 s later, `herdr agent read "<agent_name>" --source visible`. Every server listed must read `disabled`, except `codex_tui` and a server the worker's args give back, which lists only the tools its `enabled_tools` names; when another one doesn't, close the worker and stop for the user.
    - Pi: `--model`, `openrouter/<the DeepSeek model>` (`openrouter/deepseek/deepseek-v4.1-flash-1017` unless `workers.md` names another), `--thinking`, `<effort>`. Pi starts with the user's own extensions, packages, skills and MCP servers, as the user's own Pi sessions do, because the linters and other tools help the worker (the owner's decision, 2026-11-18); Herdr's state extension is among them, which is how Herdr tracks the agent's state. A Pi worker can therefore reach what those extensions reach, for example the user's Telegram ask extension, so its brief says not to contact the user and to put questions in its report.
    - Antigravity: `--model`, `<model>`, `--effort`, `<effort>`; the checkout must be trusted, as above.
 2. `"<herdr-worker>" start --run "<run>" --id <id> --label "<label>" --cwd "<checkout>" --kind claude|codex|pi|agy --args-file "<run>/out/<id>.args" --report "<run>/out/<id>/report.md"`, plus the `--env` items; `start` creates the report's folder. It returns when the agent is ready (0), at a dialog (5, the screen in `screen`), or not ready yet (3: run `"<herdr-worker>" ready --run "<run>" --id <id>`, which exits the same way).
@@ -239,7 +237,7 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
 - **Inspect a companion Codex worker** for a suspected stall: `node "<companion>" status "<job-id>" --cwd "<checkout>" --json`. When a Claude session ends normally, the plugin stops only the Codex jobs in the session's own working directory. A worker in another checkout (every worktree worker), or any worker after a crash, can still be running. Look it up by its recorded ID, which also finds earlier sessions' jobs, then cancel it or let it finish.
 - **Stopped without its result** (out of turns, a question its brief answers, half done): resume it with what remains. Claude: SendMessage to its agent ID (load the tool through ToolSearch if it is deferred); it keeps its context. A companion Codex worker: replace `--fresh` with `--resume-last` in the dispatch command and use a brief of what remains, with the same `--cwd`. It resumes this session's latest task thread there and refuses while one is running. Headless Claude and DeepSeek: rerun the dispatch command with `--resume <session_id>`, a brief of what remains, and the same `--cwd`. Antigravity: the same, with `--resume <conversation_id>`. For a worker from an earlier session, start fresh with a brief that continues from the branch's state. On the Herdr route, a resume or rerun is a new `launch` with the next attempt number and the changed command, after you `close` the earlier attempt; a headless Claude worker resumes with `--resume <session_id>` in the same checkout, and a mode B worker takes another `prompt`. A mode B Codex worker whose tab is gone resumes with a new `start` whose args file is the line `resume`, the line with its verified `session_id`, then its whole recipe from `-m` on; the conversation continues there. Without a verified id, start fresh with a brief of what remains.
 - **Usage limit**: wait for the reset, with a background Bash `sleep` that wakes you then, or switch provider when the mode allows (`mixed`, `auto`). In `claude` or `codex` mode, tell the user what is waiting and until when.
-- **Stall or provider error** (a crash, network failure, garbled output, or a worker far past its expected time with no new output): stop it and rerun with a fresh worker on the same tier. For a companion Codex worker, cancel with `node "<companion>" cancel "<job-id>" --cwd "<checkout>" --json`: stopping Bash alone can leave the shared Codex background process working in the checkout. Confirm with `status` before replacing it. For DeepSeek, stopping the background Bash task stops the worker. For Antigravity, stopping it makes the wrapper stop its scope; when the wrapper was killed outright, stop the scope by its recorded name: `systemctl --user stop <scope>`. On the Herdr route, stopping the `wait` leaves the worker running; `"<herdr-worker>" close --run "<run>" --id <id>` stops it and closes its pane (for a companion Codex worker, after the `cancel`).
+- **Stall or provider error** (a crash, network failure, garbled output, or a worker far past its expected time with no new output): stop it and rerun with a fresh worker on the same tier. For a companion Codex worker, cancel with `PATH="<no-mcp>:$PATH" node "<companion>" cancel "<job-id>" --cwd "<checkout>" --json`: stopping Bash alone can leave the shared Codex background process working in the checkout. Confirm with `status` before replacing it. For DeepSeek, stopping the background Bash task stops the worker. For Antigravity, stopping it makes the wrapper stop its scope; when the wrapper was killed outright, stop the scope by its recorded name: `systemctl --user stop <scope>`. On the Herdr route, stopping the `wait` leaves the worker running; `"<herdr-worker>" close --run "<run>" --id <id>` stops it and closes its pane (for a companion Codex worker, after the `cancel`).
 - **Fails its checks after one correction round**: a fresh worker one tier up, given the brief plus what went wrong. Already at frontier: a fresh frontier worker on the other provider when the mode allows; otherwise the user decides.
 
 ## 6. Check a result

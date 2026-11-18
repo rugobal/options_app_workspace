@@ -1,0 +1,8 @@
+-c
+plugins={"mongodb@mongodb-plugins"={enabled=false},"unified-computer-use@openai-bundled"={enabled=false}}
+-c
+mcp_servers.tauri.enabled=false
+-c
+mcp_servers.node_repl.enabled=false
+-c
+features.apps=false

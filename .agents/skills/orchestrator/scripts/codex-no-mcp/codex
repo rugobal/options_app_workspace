@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# codex: runs the next `codex` in PATH without the user's MCP servers and connectors.
+#
+# The Codex companion starts `codex app-server` from PATH, so its workers get this wrapper with
+# PATH="<this folder>:$PATH" in front of `node … codex-companion.mjs`. It runs the real codex with
+# a list's arguments (the -c pairs that turn the servers off) before the companion's own: the list
+# is no-mcp.args beside this file, one argument per line, or the file CODEX_NO_MCP_ARGS names (a
+# task's edited copy that gives a server back). An unreadable or empty list, or no other codex in
+# PATH, exits 127 and runs nothing.
+
+die() { printf 'codex-no-mcp: %s\n' "$1" >&2; exit 127; }
+
+# mise's codex wrapper runs the next codex in PATH, which can be this file again, in the same
+# process: that second pass adds nothing, as the list is already in "$@".
+args=()
+if [ "${CODEX_NO_MCP_PID:-}" != "$$" ]; then
+  list=${CODEX_NO_MCP_ARGS:-$(dirname -- "$(realpath -- "$0")")/no-mcp.args}
+  [ -f "$list" ] && [ -r "$list" ] || die "cannot read the list $list"
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] || args+=("$line")
+  done < "$list"
+  [ "${#args[@]}" -gt 0 ] || die "the list $list is empty"
+  export CODEX_NO_MCP_PID=$$
+fi
+
+# The first codex in PATH that is not this file, called by the path found: mise's wrapper tells
+# which tool to run from the name it was called by.
+real=""
+IFS=: read -r -a dirs <<< "$PATH"
+for dir in "${dirs[@]}"; do
+  [ -n "$dir" ] || continue
+  candidate=$dir/codex
+  [ -f "$candidate" ] && [ -x "$candidate" ] || continue
+  [ "$candidate" -ef "$0" ] && continue
+  real=$candidate
+  break
+done
+[ -n "$real" ] || die "no codex in PATH other than this wrapper"
+exec "$real" "${args[@]}" "$@"

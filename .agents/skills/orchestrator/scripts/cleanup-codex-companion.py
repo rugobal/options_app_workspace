@@ -147,11 +147,19 @@ def descendants(broker):
     return result
 
 
+def codex_subcommand(cmd):
+    # `codex <subcommand> …`, or through the skill's no-MCP wrapper `codex -c <value> … <subcommand> …`
+    args = cmd[1:]
+    while len(args) >= 2 and args[0] == '-c':
+        args = args[2:]
+    return args[0] if args else None
+
+
 def infrastructure(row, broker):
     cmd, name = row['cmd'], row['name']
     if row['pid'] == broker['pid'] or row['state'] == 'Z':
         return True
-    if name == 'codex' and cmd[1:2] in (['app-server'], ['sandbox']):
+    if name == 'codex' and codex_subcommand(cmd) in ('app-server', 'sandbox'):
         return True
     if name in ('codex-code-mode', 'node_repl', 'bwrap', 'codex-linux-san'):
         return True
