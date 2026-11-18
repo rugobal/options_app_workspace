@@ -8,6 +8,7 @@
 #   herdr-worker.sh ready  --run DIR --id ID [--timeout MS]
 #   herdr-worker.sh keys   --run DIR --id ID --keys "KEY [KEY]..."
 #   herdr-worker.sh prompt --run DIR --id ID --text-file FILE [--timeout MS]
+#   herdr-worker.sh mcp    --run DIR --id ID [--timeout MS]
 #   herdr-worker.sh wait   --run DIR --id ID [--timeout MS]
 #   herdr-worker.sh status --run DIR [--id ID]
 #   herdr-worker.sh state  --run DIR --id ID --state working|blocked|idle [--message TEXT]
@@ -36,12 +37,29 @@
 #   composer (a draft, the history search, a menu, a pane too narrow for the footer hints, a failed
 #   read) is 3, and nothing is sent. After a dialog Codex shows idle, then working while it finishes
 #   starting, so start and ready count the composer once Herdr has shown no work for 3 s and a fresh
-#   read still finds it, before the deadline. They count a dialog once a second read 1 s later still
-#   shows it: a read right after keys can still show the dialog they answered. Mode B Codex runs no
+#   read still finds it. They count a dialog once a read a full second later, with no other read
+#   between, still shows it (a read right after keys can still show the dialog they answered); that
+#   read is the result's screen. Mode B Codex runs no
 #   companion, so close gives no codex_cleanup for it. Session id: Herdr's (the agent's own hook in
 #   its pane); without it, at the end of a turn, the id of the checkout's only Codex rollout written
 #   since the agent started (to the millisecond); two such rollouts leave it null with
 #   session_ambiguous true.
+#   Time: --timeout is the call's whole time; for start it runs from `herdr agent start`, after the tab
+#   and its shell prompt (up to 10 s more). Each confirmation must fit in what is left, with 250 ms for
+#   its last read: the composer's 3 s of no work, a dialog's 1 s, and the 3 s allowed for a blocked
+#   state to change (start, ready, prompt, wait). One that can't fit ends the call with 3 at once. So
+#   ready on Codex needs --timeout 3500 or more to return 0 (1500 to confirm a dialog), and start needs
+#   Codex's own start-up time on top.
+# mcp (mode B Codex) sends `/mcp verbose` under prompt's last-moment check (only Codex's empty composer
+#   takes it; a dialog is 5, anything else 3, nothing sent), then reads the list Codex prints into its
+#   transcript: no turn opens, the composer is empty again, and the lifecycle state never changes. 0:
+#   {id, agent_name, state, servers: [{name, status, tools, tool_names}], connected: {NAME: [TOOL...]}},
+#   tool_names for connected servers only; connected maps each connected server to its tool names. 1
+#   mcp_unreadable (error.detail: reason, screen): no new, complete list above an empty composer in time
+#   (default 15000 ms): no heading, a list clipped at the top, rows it can't read, a tool count that
+#   doesn't match the names, or a screen unchanged since the call began (a second mcp on a screen that
+#   shows only repeats of one list can't tell its list from the last; it fails, never reads the old one).
+#   64 agent_working or turn_open while a turn runs; 4 gone, with no change recorded.
 # keys sends keys (Herdr key names) to a mode B agent's pane, to answer a dialog.
 # wait blocks until the worker's outcome is known. Mode A: the exit record. Mode B: the delivered turn
 #   settles. It never stops a worker, except a mode A worker whose pane and supervisor are both gone.
@@ -79,10 +97,12 @@
 # Every call prints exactly one JSON object on stdout; "ok" is true exactly when the exit status is 0.
 # Exit status:
 #   0  done. wait: the worker finished (mode A: its own status is exit_code; mode B: the turn's report).
-#   1  Herdr or internal error (error.detail holds Herdr's error), or close could not stop a worker.
+#   1  Herdr or internal error (error.detail holds Herdr's error), close could not stop a worker, or
+#      mcp could not read a new, complete list (mcp_unreadable).
 #   2  not inside Herdr (HERDR_ENV is not 1) or a tool missing: dispatch with background Bash instead.
-#   3  timeout, nothing changed; start/ready: the agent is not ready yet (no dialog); prompt with
-#      delivered false: nothing sent, the agent's input is not ready for it (the screen in the JSON).
+#   3  timeout, nothing changed; start/ready: not ready within the time, or no time left to confirm
+#      what it shows (a dialog seen once); prompt with delivered false, or mcp: nothing sent, the
+#      agent's input is not ready for it (the screen in the JSON).
 #   4  gone or stopped: the pane or agent is gone, the mode A worker was stopped by a signal, or the
 #      worker is closing.
 #   5  mode B agent at a dialog: the JSON holds the visible screen.
@@ -882,7 +902,9 @@ emit_b() {  # emit_b EXIT [SCREEN]: a mode B worker's state as the call's result
      + (if $sc == "" then {} else {screen: $sc} end)' <<< "$W")"
 }
 gone_b() { transition gone '{}'; AGENT_STATUS=gone; emit_b 4; }
-blocked_b() { transition blocked '{}'; AGENT_STATUS=blocked; emit_b 5 "$(screen_text)"; }
+blocked_b() {  # blocked_b [SCREEN]: at a dialog; the result's screen is SCREEN, the read that confirmed it, or a fresh read
+  transition blocked '{}'; AGENT_STATUS=blocked; emit_b 5 "${1:-$(screen_text)}"
+}
 
 # Codex's screen, read at its bottom: Codex draws its input area (composer, status line, footer) or a
 # dialog below the transcript, so words in the transcript never decide. The footer's " for shortcuts"
@@ -958,19 +980,30 @@ session_fill() {  # session_fill [rollout]: record the agent's session id once i
   fi
 }
 
-blocked_grace() {  # Herdr can show blocked for a moment after a dialog is answered: allow 3 s for a change
+# Confirmations take time, and each must fit in the call's own time (DEADLINE_MS) with READ_MS left for
+# the read that ends it; one that can't fit ends the call with 3 at once, never after its deadline.
+READ_MS=250
+blocked_grace() {  # blocked_grace DEADLINE_MS: 0 waited, 1 already used in this call, 2 no room for it
+  # Herdr can show blocked for a moment after a dialog is answered: allow 3 s for a change, once.
   [ "$BLOCKED_SEEN" = 0 ] || return 1
+  [ "$(($1 - $(now_ms)))" -ge "$((3000 + READ_MS))" ] || return 2
   BLOCKED_SEEN=1
   if ! hcall agent wait "$(wf pane_id)" --until idle --until done --until working --timeout 3000; then
     case $(herr_code) in timeout|agent_not_found|pane_not_found) ;; *) herdr_fail agent wait ;; esac
   fi
 }
-BLOCKED_SEEN=0 DIALOG_SEEN=0
+BLOCKED_SEEN=0
+
+not_ready_b() {  # start or ready ends with 3: not ready within the time, or no room left to confirm what it shows
+  [ "$(wf turn)" != 0 ] || transition starting '{}'
+  emit_b 3 "$(screen_text | tail -n 25)"
+}
 
 startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as ready, at a dialog, or not ready yet
-  local left splash=0 look quiet=0 was_quiet
+  local left splash=0 look quiet=0 was_quiet dialog=0 was_dialog g
   while :; do
-    look=wait was_quiet=$quiet quiet=0
+    # Every pass starts unconfirmed: only a dialog read on the pass right after one confirms it.
+    look=wait was_quiet=$quiet quiet=0 was_dialog=$dialog dialog=0
     if ! agent_check && [ "$AGENT_STATUS" = gone ]; then
       transition gone '{}'
       emit_b 4 "$(screen_text)"
@@ -984,36 +1017,36 @@ startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as r
     fi
     session_fill
     case $AGENT_STATUS in
-      blocked) if blocked_grace; then continue; fi; blocked_b ;;
+      blocked)
+        g=0; blocked_grace "$1" || g=$?
+        case $g in 0) continue ;; 2) not_ready_b ;; *) blocked_b ;; esac ;;
       idle|done)
         if [ "$(wf harness)" != codex ]; then transition ready '{}'; emit_b 0; fi
         # Herdr shows Codex's hooks review as idle, so only Codex's empty composer means ready. After a
         # dialog Codex shows idle, then working while it finishes starting: ready when Herdr has shown
         # no work for 3 s and a fresh look (Herdr's state and the screen, read after them) still finds
-        # the composer, all before the deadline.
+        # the composer.
         if codex_screen; then
           if [ "$was_quiet" = 1 ]; then transition ready '{}'; emit_b 0; fi
-          if [ "$((${1} - $(now_ms)))" -ge 3500 ]; then
-            if hcall agent wait "$(wf pane_id)" --until working --until blocked --timeout 3000; then continue; fi
-            case $(herr_code) in timeout) quiet=1 ;; agent_not_found|pane_not_found) ;; *) herdr_fail agent wait ;; esac
-            continue
-          fi
+          [ "$((${1} - $(now_ms)))" -ge "$((3000 + READ_MS))" ] || not_ready_b
+          if hcall agent wait "$(wf pane_id)" --until working --until blocked --timeout 3000; then continue; fi
+          case $(herr_code) in timeout) quiet=1 ;; agent_not_found|pane_not_found) ;; *) herdr_fail agent wait ;; esac
+          continue
         fi
-        # A dialog counts once the next read, 1 s later, still shows it: right after keys answer one,
-        # the first read can still show it, before Codex has drawn what follows.
+        # A dialog counts once a read a full second later, with no other read between, still shows it:
+        # right after keys answer one, the first read can still show it, before Codex has drawn what
+        # follows. The result's screen is the confirming read.
         if [ "$CODEX_SCREEN" = dialog ]; then
-          [ "$DIALOG_SEEN" = 0 ] || blocked_b
-          DIALOG_SEEN=1
-        else
-          DIALOG_SEEN=0
+          [ "$was_dialog" = 0 ] || blocked_b "$CODEX_TEXT"
+          [ "$((${1} - $(now_ms)))" -ge "$((1000 + READ_MS))" ] || not_ready_b
+          dialog=1
+          nap 1000 "$1"
+          continue
         fi
         look=nap ;;
     esac
     left=$((${1} - $(now_ms)))
-    if [ "$left" -lt 100 ]; then
-      [ "$(wf turn)" != 0 ] || transition starting '{}'
-      emit_b 3 "$(screen_text | tail -n 25)"
-    fi
+    [ "$left" -ge 100 ] || not_ready_b
     if [ "$AGENT_STATUS" = absent ] || [ "$look" = nap ]; then
       nap 1000 "$1"   # Herdr has not seen the agent in its pane yet, or Codex's screen is not settled
     elif ! hcall agent wait "$(wf pane_id)" --until idle --until done --until blocked --timeout "$((left < 30000 ? left : 30000))"; then
@@ -1023,12 +1056,14 @@ startup_settle() {  # startup_settle DEADLINE_MS: classify a starting agent as r
 }
 
 settle_b() {  # settle_b DEADLINE_MS: after a delivered prompt, until the turn ends or time is up
-  local rechecked=0 left
+  local rechecked=0 left g
   while :; do
     agent_check || gone_b
     session_fill
     case $AGENT_STATUS in
-      blocked) if blocked_grace; then continue; fi; blocked_b ;;
+      blocked)
+        g=0; blocked_grace "$1" || g=$?
+        case $g in 0) continue ;; 2) emit_b 3 ;; *) blocked_b ;; esac ;;
       idle|done)
         if report_fresh; then session_fill rollout; transition reported '{report_turn: .turn}'; emit_b 0; fi
         # An early idle can come before the turn's work: look once more after a pause.
@@ -1094,7 +1129,7 @@ cmd_start() {
     case $(herr_code) in agent_not_ready|timeout) ;; *) herdr_fail agent start ;; esac
   fi
   CLEANUP_PANE=""
-  startup_settle "$((deadline > $(now_ms) + 3000 ? deadline : $(now_ms) + 3000))"
+  startup_settle "$deadline"
 }
 
 mode_b_worker() {  # the current worker is an open mode B worker
@@ -1172,6 +1207,104 @@ cmd_prompt() {
     esac
   fi
   settle_b "$deadline"
+}
+
+# Codex's `/mcp verbose` prints its list into the transcript and leaves the composer empty; it opens no
+# turn. The pane holds only the visible screen, so a list taller than the screen loses its heading. The
+# list read is the last "🔌  MCP Tools" heading on screen, with nothing but Codex's input area below it,
+# and it is new only when the screen gained a heading or the rows above the last heading changed (an
+# unchanged screen still shows the previous list). A server row is "  • NAME: STATUS (N tools)", its
+# detail rows "    • KEY: VALUE", and a long Tools value wraps onto rows of its own, which start with a name.
+MCP_JQ='
+def rows: split("\n") | map(sub("\\s+$"; ""));
+def heads: [to_entries[] | select(.value | test("^🔌\\s+MCP Tools$")) | .key];
+def above: heads as $h | if $h == [] then . else .[:$h[-1]] end;
+def server_row: [capture("^  • (?<name>[^:\\s]+): (?<status>[^()]+) \\((?<tools>[0-9]+) tools?\\)$")];
+def detail_row: [capture("^    • (?<k>[^:]+): (?<v>.*)$")];
+def tail_row($row):
+  if $row == "" or ($row | test("^\\s")) then .at = "tail"
+  elif ($row | startswith("›")) then .at = "done"
+  else .reason = "list_not_last" end;
+($b | rows) as $b | ($s | rows) as $r | ($r | heads) as $h
+| if $h == [] then {reason: "no_heading"}
+  elif ($h | length) <= ($b | heads | length) and ($r | above) == ($b | above) then {reason: "not_new"}
+  else
+    reduce $r[$h[-1] + 1:][] as $row ({at: "lead", groups: [], key: null, reason: null};
+      if .reason != null or .at == "done" then .
+      elif .at == "tail" then tail_row($row)
+      elif $row == "" then (if .at == "group" then .at = "gap" elif .at == "gap" then .at = "tail" else . end)
+      else ($row | server_row) as $g | ($row | detail_row) as $kv
+        | if $g != [] then .groups += [$g[0] + {tools: ($g[0].tools | tonumber), rows: {}}] | .at = "group" | .key = null
+          elif .at == "gap" then tail_row($row)
+          elif .at == "lead" then .reason = "unexpected_row"
+          elif $kv != [] then .groups[-1].rows[$kv[0].k] = $kv[0].v | .key = $kv[0].k
+          elif .key != null and ($row | test("^[•›⚠■]") | not) then .groups[-1].rows[.key] += $row
+          else .reason = "unexpected_row" end
+      end)
+    | if .reason != null then {reason}
+      elif .groups == [] then {reason: "no_servers"}
+      elif .at != "done" then {reason: "no_composer_below"}
+      else
+        [.groups[] | {name, status, tools}
+          + if .status != "connected" then {}
+            elif .rows.Tools == null then {bad: true}
+            elif .rows.Tools == "(none)" then {tool_names: []}
+            else {tool_names: (.rows.Tools | split(",") | map(sub("^\\s+"; "") | sub("\\s+$"; "")))} end] as $sv
+        | if any($sv[]; .bad or (.tool_names != null and (
+              (.tool_names | length) != .tools or any(.tool_names[]; test("^[^\\s,]+$") | not))))
+          then {reason: "tools_unreadable"}
+          else {servers: $sv, connected: ([$sv[] | select(.status == "connected") | {(.name): .tool_names}] | add // {})} end
+      end
+  end'
+
+cmd_mcp() {
+  require --run "$RUN" --id "$ID"
+  setup_run
+  parse_timeout 15000
+  load_worker
+  mode_b_worker
+  [ "$(wf harness)" = codex ] || fail 64 usage "mcp is for mode B Codex workers; $ID runs $(wf harness)"
+  # No path here changes the lifecycle: a refusal or a gone agent leaves the registry as it was.
+  agent_check || emit_b 4
+  if [ "$(delivered)" = true ] && [[ $(wf state) =~ ^(working|blocked)$ ]]; then
+    fail 64 turn_open "turn $(wf turn) is still open: wait for it to end first"
+  fi
+  case $AGENT_STATUS in
+    blocked) emit_b 5 "$(screen_text)" ;;
+    working) fail 64 agent_working "agent $(wf agent_name) is working: wait for it to settle first" ;;
+  esac
+  # The same last-moment check as prompt: only Codex's empty composer takes the command; a dialog is 5,
+  # anything else 3, and nothing is sent.
+  if ! codex_screen; then
+    [ "$CODEX_SCREEN" != dialog ] || { AGENT_STATUS=blocked; emit_b 5 "$CODEX_TEXT"; }
+    emit_b 3 "$CODEX_TEXT"
+  fi
+  local before deadline res reason=""
+  before=$CODEX_TEXT
+  deadline=$(($(now_ms) + T))
+  if ! hcall agent prompt "$(wf agent_name)" "/mcp verbose"; then
+    case $(herr_code) in
+      agent_blocked) AGENT_STATUS=blocked; emit_b 5 "$(screen_text)" ;;
+      agent_not_ready) emit_b 3 "$(screen_text)" ;;
+      agent_not_found|pane_not_found) AGENT_STATUS=gone; emit_b 4 ;;
+      *) herdr_fail agent prompt ;;
+    esac
+  fi
+  while :; do
+    codex_screen || true
+    res=$(jq -cn --arg b "$before" --arg s "$CODEX_TEXT" "$MCP_JQ") || fail 1 internal "the MCP list parser failed"
+    reason=$(jq -r '.reason // empty' <<< "$res")
+    [ -n "$reason" ] || [ "$CODEX_SCREEN" = composer ] || reason=composer_not_empty
+    if [ -z "$reason" ]; then
+      agent_check || emit_b 4
+      [ "$AGENT_STATUS" != working ] || fail 1 mcp_turn_opened "agent $(wf agent_name) is working after /mcp"
+      emit 0 "$(jq -c --argjson r "$res" '{id, agent_name, state} + $r' <<< "$W")"
+    fi
+    [ "$((deadline - $(now_ms)))" -ge "$READ_MS" ] ||
+      fail 1 mcp_unreadable "no new, complete MCP list above an empty composer within $T ms ($reason)" \
+        "$(jq -cn --arg r "$reason" --arg s "$CODEX_TEXT" '{reason: $r, screen: $s}')"
+    nap "$READ_MS" "$deadline"
+  done
 }
 
 wait_b() {
@@ -1374,9 +1507,10 @@ case $SUB in
   ready) cmd_ready ;;
   keys) cmd_keys ;;
   prompt) cmd_prompt ;;
+  mcp) cmd_mcp ;;
   wait) cmd_wait ;;
   status) cmd_status ;;
   state) cmd_state ;;
   close) cmd_close ;;
-  *) fail 64 usage "subcommand must be launch, start, ready, keys, prompt, wait, status, state or close (see the header of $0)" ;;
+  *) fail 64 usage "subcommand must be launch, start, ready, keys, prompt, mcp, wait, status, state or close (see the header of $0)" ;;
 esac

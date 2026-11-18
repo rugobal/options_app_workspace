@@ -132,22 +132,50 @@ Record each path below in `rules.md` once per run. When a provider's requirement
 
 Codex workers run without the user's MCP servers and connectors (the owner's decision, 2026-11-18): Codex's sandbox holds shell commands only, and a server runs outside it with the user's network and files. [scripts/codex-no-mcp/no-mcp.args](scripts/codex-no-mcp/no-mcp.args) is the list of `-c` pairs that turn them off, one argument per line. It names the servers and plugins of the user's Codex config, so one added there later needs its own lines in that file.
 
-- **Companion workers** get the list from `<no-mcp>/codex`, which the `PATH` prefix puts before the real `codex`: the companion starts `codex app-server` from `PATH`, and the wrapper runs the real one with the list's pairs in front. A checkout's app server starts with its first task and keeps its arguments until you release that checkout ([section 6](#release-finished-codex-runtimes)), so release a checkout whose broker started without the prefix, or with another list, before dispatching there. Once per run, a few seconds after the first companion dispatch, read its app server's arguments; this takes no model turn:
+- **Companion workers** get the list from `<no-mcp>/codex`, which the `PATH` prefix puts before the real `codex`: the companion starts `codex app-server` from `PATH`, and the wrapper runs the real one with the list's pairs in front. A checkout's app server starts with its first task and keeps its arguments until you release that checkout ([section 6](#release-finished-codex-runtimes)), so release a checkout whose broker started without the prefix, or with another list, before dispatching there. A few seconds after the first companion dispatch in each checkout, read that checkout's app server arguments; this takes no model turn:
 
   ```
   for p in $(pgrep -f ' app-server$'); do [ "$(readlink /proc/$p/cwd)" = "<checkout>" ] && tr '\0' '\n' < /proc/$p/cmdline; done
   ```
 
-  It prints a `codex` path, the list's lines, then `app-server`. When `app-server` follows the path directly, or nothing prints twice a few seconds apart while the task runs, cancel the job, release the checkout and stop for the user.
-- **Mode B workers** take the list at the end of their args file, and their `/mcp` is checked there ([mode B](#the-herdr-route)).
-- **Giving a server back.** A task that needs one of these servers gets it back, limited to the tools it needs, in a copy of the list: `cp "<no-mcp>/no-mcp.args" "<run>/out/<task>.no-mcp.args"`, then edit the copy. A config server: replace its `enabled=false` line with `mcp_servers.<server>.enabled_tools=["<tool>"]`. A plugin's server: in the `plugins=` line, replace that plugin's `{enabled=false}` with `{mcp_servers={<server>={enabled_tools=["<tool>"]}}}`. Under `never`, Codex refuses a tool unless it is marked read-only, or marked both not destructive and closed-world. Approve a refused tool the task needs for that worker alone, one tool at a time, never the whole server, with two more lines:
+  It prints a `codex` path, the list's lines, then `app-server`. When `app-server` follows the path directly, or nothing prints twice a few seconds apart while the task runs, cancel the job, release the checkout and stop for the user. The arguments can't show a server that the checkout's own `.codex/config.toml` adds, so before the first companion dispatch in a checkout, look for that file, tracked or not: when `grep -s -E 'mcp_servers|plugins' "<checkout>/.codex/config.toml"` prints a line, stop for the user.
+- **Mode B workers** take the list at the end of their args file, and `mcp` checks each one before its first prompt ([mode B](#the-herdr-route), step 4).
+- **Giving a server back.** A task that needs one of these servers gets it back, limited to the tools it needs, in a copy of the list: `cp "<no-mcp>/no-mcp.args" "<run>/out/<task>.no-mcp.args"`, then edit the copy. Every value keeps its own `-c` line before it, and every plugin entry stays inside the one `plugins=` value. The restored server gets three settings, because the user's config can approve a whole server or single tools and the copy's values override it:
+  - `enabled_tools`, naming only the task's tools;
+  - `default_tools_approval_mode="auto"`, the setting that approves nothing by itself: under `never`, Codex runs a tool only when it is marked read-only, or marked both not destructive and closed-world;
+  - an `approval_mode` for each of those tools: `"auto"`, or `"approve"` for a tool the task needs that Codex would refuse. Never approve the whole server.
+
+  A config server: its `enabled=false` value becomes the three values. The copy for `tauri` with one tool, `<tool>` the only part to fill in:
 
   ```
   -c
-  mcp_servers.<server>.tools.<tool>.approval_mode="approve"
+  plugins={"mongodb@mongodb-plugins"={enabled=false},"unified-computer-use@openai-bundled"={enabled=false}}
+  -c
+  mcp_servers.tauri.enabled_tools=["<tool>"]
+  -c
+  mcp_servers.tauri.default_tools_approval_mode="auto"
+  -c
+  mcp_servers.tauri.tools.<tool>.approval_mode="auto"
+  -c
+  mcp_servers.node_repl.enabled=false
+  -c
+  features.apps=false
   ```
 
-  For a plugin's server, put `tools={<tool>={approval_mode="approve"}}` beside its `enabled_tools` instead. A companion worker takes the copy with `CODEX_NO_MCP_ARGS="<copy>"` in front of every dispatch, its resume included, in a checkout released just before; release it again before the next task there. A mode B worker's args end with the copy in place of the list.
+  A plugin's server: first find every server the plugin supplies, with no model turn. Run `xargs -d '\n' -a "<file>" codex mcp list --json` on the list and on a scratch copy whose entry for the plugin reads `{enabled=true}`; the names only the scratch run shows are the plugin's servers. Its entry in the task's copy then reads `{mcp_servers={<server>={<the three values>},<other server>={enabled=false}}}`, one `enabled=false` entry for each other server it supplies. The copy for `mongodb`, the only server `mongodb@mongodb-plugins` supplies (checked 2026-11-18):
+
+  ```
+  -c
+  plugins={"mongodb@mongodb-plugins"={mcp_servers={mongodb={enabled_tools=["<tool>"],default_tools_approval_mode="auto",tools={<tool>={approval_mode="auto"}}}}},"unified-computer-use@openai-bundled"={enabled=false}}
+  -c
+  mcp_servers.tauri.enabled=false
+  -c
+  mcp_servers.node_repl.enabled=false
+  -c
+  features.apps=false
+  ```
+
+  Before the dispatch, from the checkout: `xargs -d '\n' -a "<copy>" codex mcp get <server>` (plain: `--json` leaves out the approval mode) must show `enabled_tools` with only the task's tools and `default_tools_approval_mode: auto`, and `grep -n approval_mode ~/.codex/config.toml` shows what the user's config approves, which the copy's values replace for the tools it gives back; neither takes a model turn. A worker given a tool back reaches whatever that tool reaches, outside its sandbox. A companion worker takes the copy with `CODEX_NO_MCP_ARGS="<copy>"` in front of every dispatch, its resume included, in a checkout released just before; release it again before the next task there. A mode B worker's args end with the copy in place of the list, and its `mcp` list is the final proof.
 - **`codex_tui`**, the Codex screen's own tools on the user's Codex threads and worktrees, has no off switch. Mode B workers have it, and every Codex brief says not to use it ([section 3](#3-brief-a-worker)).
 
 ### The background route
@@ -174,7 +202,7 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
 
 1. Write the agent's arguments to `<run>/out/<id>.args`, **one argument per line, passed as is**: write exactly the characters the program should receive. Shell quotes are not needed and are not removed, and nothing is expanded; empty lines are skipped. A flag and its value are two lines.
    - Claude: `--model`, `<model>`, `--effort`, `<effort>` (when one is named), `--permission-mode`, `auto`, `--strict-mcp-config`, plus `--advisor`, `<model>` when `workers.md` names one. Code Mode and any other variable the agent reads at start go to `start` as `--env CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`.
-   - Codex: a builder or a read-only reviewer, `<model>` and `<effort>` from the pin or tier and every path absolute. Its report goes in a folder of its own, `<run>/out/<id>/`, the one place outside its checkout it may write. Builder:
+   - Codex: a builder or a read-only reviewer, `<model>` and `<effort>` from the pin or tier and every path absolute. Its report goes in a folder of its own, `<run>/out/<id>/`. Builder, whose shell commands write in its checkout, the Git folders listed and its report folder:
 
      ```
      -m
@@ -197,7 +225,7 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
      <run>/out/<id>
      ```
 
-     `<git dir>` is the worktree's own Git folder, `git -C "<checkout>" rev-parse --path-format=absolute --git-dir`, and `<common git dir>` the same with `--git-common-dir`. With those writable the builder runs `git add` and `git commit` in a linked worktree and commits itself, like a Claude worker; the repo's config and hooks stay read-only, and it has no network, as in mode A. Read-only reviewer, its TOML quotes part of the values:
+     `<git dir>` is the worktree's own Git folder, `git -C "<checkout>" rev-parse --path-format=absolute --git-dir`, and `<common git dir>` the same with `--git-common-dir`. With those writable the builder runs `git add` and `git commit` in a linked worktree and commits itself, like a Claude worker. Its shell commands can't write the repo's config or hooks and have no network, as in mode A. Read-only reviewer, its TOML quotes part of the values:
 
      ```
      -m
@@ -212,9 +240,9 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
      permissions.reviewer.filesystem={":root"="read","<run>/out/<id>"="write"}
      ```
 
-     It reads everything, runs read-only commands, and writes only in `<run>/out/<id>`. The profile is its whole sandbox: a `--sandbox` flag would replace it.
+     Its shell commands read everything and write only in `<run>/out/<id>`. The profile is its whole sandbox: a `--sandbox` flag would replace it.
 
-     Both end with the no-MCP list ([No MCP servers](#no-mcp-servers-for-codex)), or a give-back task's copy of it: `{ echo; cat "<no-mcp>/no-mcp.args"; } >> "<run>/out/<id>.args"`. The empty line `echo` adds is skipped, and it keeps the list's first line off a last line written without its newline. Once per run, check the first mode B Codex worker after `start` or `ready` exits 0 and before its first prompt; `/mcp` opens no turn: `herdr agent prompt "<agent_name>" "/mcp"` (`agent_name` from `start`'s JSON), then, about 3 s later, `herdr agent read "<agent_name>" --source visible`. Every server listed must read `disabled`, except `codex_tui` and a server the worker's args give back, which lists only the tools its `enabled_tools` names; when another one doesn't, close the worker and stop for the user.
+     Both end with the no-MCP list ([No MCP servers](#no-mcp-servers-for-codex)), or a give-back task's copy of it: `{ echo; cat "<no-mcp>/no-mcp.args"; } >> "<run>/out/<id>.args"`. The empty line `echo` adds is skipped, and it keeps the list's first line off a last line written without its newline.
    - Pi: `--model`, `openrouter/<the DeepSeek model>` (`openrouter/deepseek/deepseek-v4.1-flash-1017` unless `workers.md` names another), `--thinking`, `<effort>`. Pi starts with the user's own extensions, packages, skills and MCP servers, as the user's own Pi sessions do, because the linters and other tools help the worker (the owner's decision, 2026-11-18); Herdr's state extension is among them, which is how Herdr tracks the agent's state. A Pi worker can therefore reach what those extensions reach, for example the user's Telegram ask extension, so its brief says not to contact the user and to put questions in its report.
    - Antigravity: `--model`, `<model>`, `--effort`, `<effort>`; the checkout must be trusted, as above.
 2. `"<herdr-worker>" start --run "<run>" --id <id> --label "<label>" --cwd "<checkout>" --kind claude|codex|pi|agy --args-file "<run>/out/<id>.args" --report "<run>/out/<id>/report.md"`, plus the `--env` items; `start` creates the report's folder. It returns when the agent is ready (0), at a dialog (5, the screen in `screen`), or not ready yet (3: run `"<herdr-worker>" ready --run "<run>" --id <id>`, which exits the same way).
@@ -223,8 +251,12 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
    - Codex, "Hooks need review": `esc`. Codex continues this session without the new or changed hooks and saves nothing. It shows whenever a hook is new or changed to Codex, so in every new worktree of a repo that tracks `.codex/hooks.json`.
    - Claude, Pi or Antigravity, its folder-trust dialog: the keys for its trust choice, read from `screen` (such as `down enter`).
 
-   Every other dialog is the user's to answer in the tab. Then `ready` again. Send the first prompt only after `start` or `ready` exits 0.
-4. Write "Read and follow the brief at `<brief>`. Write your report to `<run>/out/<id>/report.md`, then end your turn." to `<run>/out/<id>.prompt`. In background Bash with `timeout` 7200000: `"<herdr-worker>" prompt --run "<run>" --id <id> --text-file "<run>/out/<id>.prompt"`. Each prompt is one turn; record `session_id` from its JSON once it is set. A Codex worker's id is verified as its own: Herdr's, or its checkout's only Codex session written since it started; `session_ambiguous: true` means two Codex agents wrote in that checkout, and the id stays unset. Its exit wakes you:
+   Every other dialog is the user's to answer in the tab. Then `ready` again. Send the first prompt only after `start` or `ready` exits 0, and for Codex after step 4.
+4. Codex: before its first prompt, check every worker's MCP servers with `"<herdr-worker>" mcp --run "<run>" --id <id>`. It sends `/mcp verbose` only to an empty composer and reads the list Codex prints; it opens no turn and leaves the composer empty. The expected list comes from the worker's args: `connected` holds `codex_tui` (Codex's own tools, no off switch) and each server the args give back, listing exactly that server's `enabled_tools`, and every other server in `servers` reads `disabled`.
+   - 0: compare the result with the expected list. Any other server or tool, or another status (a server starting, failed or waiting for a sign-in): close the worker and stop for the user.
+   - 1 (`mcp_unreadable`): no complete new list appeared. Close the worker and stop for the user.
+   - 5 or 3: nothing was sent. A dialog (5): answer it as in step 3 or leave it to the user. A draft or a menu (3) is the user's. Run `ready` until it exits 0, then `mcp` again. 4: treat it as a stall.
+5. Write "Read and follow the brief at `<brief>`. Write your report to `<run>/out/<id>/report.md`, then end your turn." to `<run>/out/<id>.prompt`. In background Bash with `timeout` 7200000: `"<herdr-worker>" prompt --run "<run>" --id <id> --text-file "<run>/out/<id>.prompt"`. Each prompt is one turn; record `session_id` from its JSON once it is set. A Codex worker's id is verified as its own: Herdr's, or its checkout's only Codex session written since it started; `session_ambiguous: true` means two Codex agents wrote in that checkout, and the id stays unset. Its exit wakes you:
    - 0: the agent finished its turn and wrote the report during it (`report_turn` equals `turn`). A report from an earlier turn or attempt never counts.
    - 5 with `delivered: false`: the agent was at a dialog, so the prompt was refused and no turn opened. Answer the dialog as in step 3 or leave it to the user, run `ready` until it exits 0, then send the same prompt again. `wait` refuses here (64 `not_delivered`).
    - 5 with `delivered: true`: the agent waits at a dialog mid-turn. Answer it as in step 3, then `"<herdr-worker>" wait --run "<run>" --id <id>` in background Bash, which exits like `prompt`. `wait` is only for a delivered prompt.
