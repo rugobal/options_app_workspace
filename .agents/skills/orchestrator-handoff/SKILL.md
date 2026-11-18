@@ -6,7 +6,7 @@ description: >-
 
 # Orchestrator handoff
 
-A conductor session loses detail at every compaction. A fresh session reading the run's files loses none. So the conductor hands over at a **clean point**: no correction pending, and no worker running outside Herdr. Workers in Herdr tabs (orchestrator §4, "Inside Herdr") keep running across the handoff, and the next session adopts them.
+A conductor session loses detail at every compaction. A fresh session reading the run's files loses none. So the conductor hands over at a **clean point**: no correction pending, and no worker running outside Herdr. Workers in Herdr tabs (orchestrator §4, "The Herdr route") keep running across the handoff, and the next session adopts them.
 
 This runs inside the [orchestrator](../orchestrator/SKILL.md) skill; that skill covers the run files, dispatch, checks, integration and Codex cleanup (cited below as orchestrator §n). Load it first if you are not already conducting.
 
@@ -38,7 +38,7 @@ Write `runs/<run>/handover.md` with only what the ledger and the repos do not al
 - the state in a few lines: what is integrated and where, what is held and why;
 - the exact next step;
 - the branches and worktrees in use;
-- inside Herdr, the registry `runs/<run>/workers.json` and the ids of the workers still running in tabs;
+- on the Herdr route, the registry `runs/<run>/workers.json` and the ids of the workers still running in tabs;
 - the counters the run keeps: next decision number, next question number, last message id;
 - notes later tasks need that the ledger lacks;
 - anything owed to the user.
@@ -59,7 +59,17 @@ Write `.scratch/orchestrator/next-session-prompt.md`:
 
 - the start command, when the standing instructions name one;
 - a short prompt: act as conductor with the orchestrator skill, read `standing-instructions.md`, `workers.md` and the run's `handover.md`, then that run's `ledger.md` and `rules.md`, and continue;
-- inside Herdr, the adoption: run `herdr-worker.sh status --run <run>`, then start a fresh background `wait` (orchestrator §4, "Inside Herdr") for each worker whose `finished_at` is empty and whose state is not `closed`, and record each wait's task ID in the ledger.
+- on the Herdr route, the reconciliation: run `herdr-worker.sh status --run <run>`, then take every ledger attempt whose result is not yet collected and handle it by its `state` there (orchestrator §4, "The Herdr route"), recording each new wait's task ID in the ledger:
+  - `finished` (mode A) or `reported` (mode B): collect and check the result (orchestrator §6);
+  - `running` (mode A) or `working` (mode B): a fresh background `wait`;
+  - `starting` (mode A): its launch never finished; when `live` shows `supervisor_alive` true or an `exit_record`, the worker started, so a fresh `wait`; else `close` it and rerun;
+  - `starting` or `ready` (mode B, never prompted): `ready`, then the first `prompt`;
+  - `blocked` (mode B): `ready` when `turn` is 0, else `wait`; either exits 5 at once with the dialog on `screen`; answer it as §4 says, or leave it to the user;
+  - `settled` (mode B): the turn ended without the report; `prompt` again with what remains;
+  - `stopped`, `lost` or `gone`: a stall (orchestrator §5);
+  - `closed`, or missing from the registry: the attempt ended before its result was read; read what its log or report holds, else rerun it as the next attempt.
+
+  The state, which comes from the worker's exit record, decides: never `finished_at` alone, and never the ledger's last word.
 
 It points to the standing instructions; their file keeps the only copy.
 
