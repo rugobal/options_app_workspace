@@ -3,6 +3,7 @@
 
 Dry-run unless --execute is supplied. Run from the parent orchestrator, after
 collecting results and deciding that this worker will not be resumed in memory.
+Tests: python3 test_cleanup_codex_companion.py, beside this file.
 """
 
 import argparse
@@ -121,6 +122,33 @@ class RPC:
         self.sock.close()
 
 
+def spawning_thread(thread):
+    # A sub-agent's thread names the thread that spawned it:
+    # source {"subAgent": {"thread_spawn": {"parent_thread_id": …}}}. Any other shape names none.
+    source = thread.get('source')
+    agent = source.get('subAgent') if isinstance(source, dict) else None
+    spawn = agent.get('thread_spawn') if isinstance(agent, dict) else None
+    parent = spawn.get('parent_thread_id') if isinstance(spawn, dict) else None
+    return parent if isinstance(parent, str) else None
+
+
+def check_loaded_threads(threads, ids):
+    # threads: each loaded thread's thread/read record by thread ID; ids: the saved jobs' thread IDs.
+    parents = {}
+    for thread_id, thread in threads.items():
+        status = thread.get('status')
+        if not isinstance(status, dict) or status.get('type') not in ('idle', 'systemError'):
+            raise UnsafeToClean('a loaded thread is active')
+        parents[thread_id] = spawning_thread(thread)
+    for thread_id in threads:
+        # A sub-agent's thread belongs to the saved job whose thread spawned it, at any depth.
+        current, steps = thread_id, 0
+        while current not in ids and parents.get(current) and steps <= len(threads):
+            current, steps = parents[current], steps + 1
+        if current not in ids:
+            raise UnsafeToClean('a loaded thread has no matching saved job result')
+
+
 def descendants(broker):
     rows = {}
     for directory in Path('/proc').iterdir():
@@ -202,13 +230,8 @@ def clean(directory, workspace, execute):
             cursor = page.get('nextCursor')
             if not cursor:
                 break
-        for thread_id in loaded:
-            thread = rpc.call('thread/read', {'threadId':thread_id, 'includeTurns':False})['thread']
-            status = thread.get('status')
-            if not isinstance(status, dict) or status.get('type') not in ('idle', 'systemError'):
-                raise UnsafeToClean('a loaded thread is active')
-            if thread_id not in ids:
-                raise UnsafeToClean('a loaded thread has no matching saved job result')
+        check_loaded_threads({thread_id: rpc.call('thread/read', {'threadId':thread_id, 'includeTurns':False})['thread']
+                              for thread_id in loaded}, ids)
         tree = descendants(broker)
         unknown = sorted({row['name'] for row in tree if not infrastructure(row, broker)})
         if unknown:
