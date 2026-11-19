@@ -260,12 +260,13 @@ Every worker runs through [scripts/herdr-worker.sh](scripts/herdr-worker.sh), re
 
      Both end with the no-MCP list ([No MCP servers](#no-mcp-servers-for-codex)), or a give-back task's copy of it: `{ echo; cat "<no-mcp>/no-mcp.args"; } >> "<run>/out/<id>.args"`. The empty line `echo` adds is skipped, and it keeps the list's first line off a last line written without its newline. Then run the preflight on the args file ([No MCP servers](#no-mcp-servers-for-codex)), and `start` only on its exit 0.
    - Pi: `--model`, `openrouter/<the DeepSeek model>` (`openrouter/deepseek/deepseek-v4.1-flash-1017` unless `workers.md` names another), `--thinking`, `<effort>`. Pi starts with the user's own extensions, packages, skills and MCP servers, as the user's own Pi sessions do, because the linters and other tools help the worker (the owner's decision, 2026-11-18); Herdr's state extension is among them, which is how Herdr tracks the agent's state. A Pi worker can therefore reach what those extensions reach, for example the user's Telegram ask extension, so its brief says not to contact the user and to put questions in its report.
-   - Antigravity: `--model`, `<model>`, `--effort`, `<effort>`; the checkout must be trusted, as above.
+   - Antigravity: `--model`, `<model>`, `--effort`, `<effort>`, `--dangerously-skip-permissions`. Without that last flag the worker stops at "Run this command?" on its first shell command; the headless wrapper passes it too. Mode B doesn't go through `<antigravity>`, so there is no systemd scope and no print-mode timeout: the worker ends with its pane on `close`.
 2. `"<herdr-worker>" start --run "<run>" --id <id> --label "<label>" --cwd "<checkout>" --kind claude|codex|pi|agy --args-file "<run>/out/<id>.args" --report "<run>/out/<id>/report.md"`, plus the `--env` items; `start` creates the report's folder. It returns when the agent is ready (0), at a dialog (5, the screen in `screen`), or not ready yet (3: run `"<herdr-worker>" ready --run "<run>" --id <id>`, which exits the same way). A 0 says the composer was empty at that read, no more.
 3. On 5: read `screen`. Only in a checkout you made, answer these dialogs with `"<herdr-worker>" keys --run "<run>" --id <id> --keys "<keys>"` (Herdr key names):
    - Codex, "Trust this folder?": `enter` (Trust and continue). Codex trusts the repository root, for a linked worktree its main repo, and saves that in `~/.codex/config.toml`, so worktrees of a trusted repo never show it.
    - Codex, "Hooks need review": `esc`. Codex continues this session without the new or changed hooks and saves nothing. It shows whenever a hook is new or changed to Codex, so in every new worktree of a repo that tracks `.codex/hooks.json`.
-   - Claude, Pi or Antigravity, its folder-trust dialog: the keys for its trust choice, read from `screen` (such as `down enter`).
+   - Antigravity, "Do you trust the contents of this project?": `enter` (`> Yes, I trust this folder`). It shows in every new checkout, even one inside a folder agy already trusts, and saves the checkout's absolute path in `trustedWorkspaces` in `~/.gemini/antigravity-cli/settings.json`. Remove that entry when you remove the worktree ([Clean up after Antigravity workers](#clean-up-after-antigravity-workers)).
+   - Claude or Pi, its folder-trust dialog: the keys for its trust choice, read from `screen` (such as `down enter`).
 
    Two different dialogs in a row count as one: still 5, with the latest screen in `screen`, so read it before you answer. Every other dialog is the user's to answer in the tab. Then `ready` again. Send the first prompt only after `start` or `ready` exits 0, and for Codex after step 4.
 4. Codex: before its first prompt, check every worker's MCP servers with `"<herdr-worker>" mcp --run "<run>" --id <id>`, the second look after the preflight: what the agent really has connected. It sends `/mcp verbose` only to an empty composer and reads the list Codex prints; it opens no turn and leaves the composer empty. Expected: `connected` holds `codex_tui` (Codex's own tools, no off switch) and each server the args give back, listing exactly that server's `enabled_tools`, and every other server in `servers` reads `disabled`.
@@ -327,9 +328,15 @@ This inspects only that checkout. It checks the broker's process identity, saved
 
 Record `stopped` or `not-running` in the ledger. On `skipped` or `incomplete` (exit 2), record the reason; do not replace this with `pkill`, a global process kill, or repeated polling. Revisit it once at a later natural wake-up if the reason has cleared. Do not start another task in the same checkout during cleanup. If another session shares that checkout, coordinate with it first; the broker's shutdown RPC has no atomic idle check. Run the helper once per releasable Codex checkout again before closing a run or handing it back to the user, and mention any runtimes left active or skipped.
 
-### Check Antigravity scopes
+### Clean up after Antigravity workers
 
-An Antigravity worker releases its processes and memory when its wrapper stops its scope, so a scope that outlives its worker is the one leak to look for. After collecting an Antigravity result, and again before closing a run or handing it back, run `systemctl --user list-units --all 'antigravity-worker-*' --no-legend`. Stop each listed scope that no running worker of yours owns, by name (`systemctl --user stop <scope>`). Then record `stopped` in the cleanup column of the task's ledger row, or `clean` when nothing was listed.
+An Antigravity worker on the wrapper releases its processes and memory when the wrapper stops its scope, so a scope that outlives its worker is the one leak to look for. After collecting an Antigravity result, and again before closing a run or handing it back, run `systemctl --user list-units --all 'antigravity-worker-*' --no-legend`. Stop each listed scope that no running worker of yours owns, by name (`systemctl --user stop <scope>`). Then record `stopped` in the cleanup column of the task's ledger row, or `clean` when nothing was listed.
+
+A mode B Antigravity worker leaves the `trustedWorkspaces` entry that its trust dialog saved ([mode B](#the-herdr-route), step 3). When you remove its worktree, drop exactly that path in one atomic edit, leaving every other entry and key as it was (the user's decision, 2026-11-19), then check that the file's `trustedWorkspaces` lists every entry it held but that one:
+
+```
+f=~/.gemini/antigravity-cli/settings.json; jq -j --arg p "<checkout>" '.trustedWorkspaces -= [$p]' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+```
 
 ## 7. Ask the user
 

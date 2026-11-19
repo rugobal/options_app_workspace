@@ -49,9 +49,9 @@ Done when: a conductor holding this file and the files it names can take the nex
 
 ## 4. Clean up
 
-Release the Codex runtime of each finished Codex checkout with the cleanup helper (orchestrator §6, "Release finished Codex runtimes"), and stop any Antigravity scope no running worker owns (orchestrator §6, "Check Antigravity scopes"). A worker still running in a Herdr tab keeps its runtime, its scope and its tab. Remove the worktrees of integrated tasks. Leave the run open when work remains.
+Release the Codex runtime of each finished Codex checkout with the cleanup helper (orchestrator §6, "Release finished Codex runtimes"), and stop any Antigravity scope no running worker owns (orchestrator §6, "Clean up after Antigravity workers"). A worker still running in a Herdr tab keeps its runtime, its scope and its tab. Remove the worktrees of integrated tasks, and with a mode B Antigravity worker's worktree its trust entry (the same section). Leave the run open when work remains.
 
-Done when: the ledger records a runtime result for every finished Codex checkout, every `antigravity-worker-*` scope listed belongs to a running worker, and no integrated task's worktree remains.
+Done when: the ledger records a runtime result for every finished Codex checkout, every `antigravity-worker-*` scope listed belongs to a running worker, and no integrated task's worktree, or its Antigravity trust entry, remains.
 
 ## 5. Write the next session's prompt
 
