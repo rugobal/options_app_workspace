@@ -424,7 +424,10 @@ ws_ours() {  # ws_ours WS: the workspace holds a live pane of one of this run's 
   local terms
   hlook pane list --workspace "$1" || return 1
   terms=$(reg_read | jq -c --arg ws "$1" '[.workers[] | select(.workspace_id == $ws and .state != "closed") | .terminal_id]')
-  jq -e --argjson t "$terms" '[.result.panes[].terminal_id] as $live | any($t[]; . as $x | $live | index($x) != null)' <<< "$HOUT" > /dev/null
+  # One terminal per open worker: the list grows with the run, so jq reads it from a file. An argument
+  # over 128 KB is refused by exec (MAX_ARG_STRLEN).
+  jq -e --slurpfile t <(printf '%s\n' "$terms") \
+    '[.result.panes[].terminal_id] as $live | any($t[0][]; . as $x | $live | index($x) != null)' <<< "$HOUT" > /dev/null
 }
 
 open_tab() {  # open_tab CWD ENTRY: a tab for the worker, recorded at once with ENTRY; sets WS TAB PANE. Under the lock.
@@ -1439,8 +1442,10 @@ cmd_status() {
   done
   ws=$(reg_read | jq -r '.workspace.id // empty')
   if [ -n "$ws" ] && ws_ours "$ws"; then ws_open=true; fi
-  emit 0 "$(printf '%s\n' "${items[@]}" | jq -cs --argjson reg "$(reg_read)" --argjson wo "$ws_open" \
-    '{run: $reg.run, workspace: (if $reg.workspace == null then null else $reg.workspace + {holds_open_workers: $wo} end),
+  # The registry is one JSON value that grows with the run (over 128 KB in a long run), so jq reads it
+  # from a file, never from an argument (MAX_ARG_STRLEN refuses a single argument that large).
+  emit 0 "$(printf '%s\n' "${items[@]}" | jq -cs --slurpfile reg <(reg_read) --argjson wo "$ws_open" \
+    '$reg[0] as $r | {run: $r.run, workspace: (if $r.workspace == null then null else $r.workspace + {holds_open_workers: $wo} end),
       workers: map(select(. != null))}')"
 }
 
@@ -1561,8 +1566,9 @@ cmd_close() {
   if [ -n "$ws" ] && hlook workspace get "$ws" && [ "$(jq -r .result.workspace.label <<< "$HOUT")" = "$wlabel" ]; then
     ws_closed=false
     if hlook pane list --workspace "$ws"; then
-      others=$(jq -c --argjson reg "$(reg_read)" \
-        '[.result.panes[] | select(.terminal_id as $t | $reg.workers | map(.terminal_id) | index($t) | not) | .pane_id]' <<< "$HOUT")
+      # The registry grows with the run: from a file, never as an argument (MAX_ARG_STRLEN).
+      others=$(jq -c --slurpfile reg <(reg_read) \
+        '[.result.panes[] | select(.terminal_id as $t | $reg[0].workers | map(.terminal_id) | index($t) | not) | .pane_id]' <<< "$HOUT")
     fi
   fi
   [ "$ws_closed" = false ] || reg_apply --arg t "$(now)" 'if .workspace == null then . else .workspace += {closed_at: $t} end'
