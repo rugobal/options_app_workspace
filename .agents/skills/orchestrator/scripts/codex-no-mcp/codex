@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# codex: runs the next `codex` in PATH without the user's MCP servers and connectors, Codex's web tool
-# and image generation.
+# codex: runs the next `codex` in PATH without the user's MCP servers, connectors and plugins, Codex's
+# web tool, image generation, browsers, computer use and skill features.
 #
 # The Codex companion starts `codex app-server` from PATH, so its workers get this wrapper with
 # `env -u CODEX_NO_MCP_ARGS PATH="<this folder>:$PATH"` in front of `node … codex-companion.mjs`. It

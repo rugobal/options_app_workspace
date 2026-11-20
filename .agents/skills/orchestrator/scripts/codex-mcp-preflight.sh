@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# codex-mcp-preflight.sh: before a Codex worker's dispatch, the MCP servers, connectors, web tool and
-# image generation it will have, read with no model turn, compared with what it may have.
+# codex-mcp-preflight.sh: before a Codex worker's dispatch, the MCP servers, the connectors, plugins,
+# browsers, computer use and skill features, the web tool and image generation it will have, read with
+# no model turn, compared with what it may have.
 #
 #   codex-mcp-preflight.sh --cwd DIR [--list FILE | --args-file FILE] [--give-back SERVER=TOOL[,TOOL]... | --give-back web]...
 #
@@ -16,25 +17,36 @@
 # the user's config later), it reads:
 #   `codex … mcp list --json`  every server of the user's config, of a trusted checkout's
 #                              .codex/config.toml and of each enabled plugin, and whether it is enabled;
-#   `codex … features list`    whether `apps` (the connectors) and `image_generation` are on;
+#   `codex … features list`    whether each feature the list turns off reads false: `apps` (the
+#                              connectors), `image_generation`, `plugins`, `remote_plugin`,
+#                              `plugin_sharing`, `browser_use`, `browser_use_external`, `computer_use`,
+#                              `in_app_browser`, `skill_search` and `skill_mcp_dependency_install`; a
+#                              feature this Codex version doesn't list, or marks removed, is a mismatch;
 #   `codex … app-server`       `config/read` from an app server that runs only for that request (no
 #                              thread, no turn, no MCP server started; it ends when its input closes):
 #                              `web_search`, the setting every web path follows (the hosted web tool,
 #                              the standalone one and a model-selected search are all off at
 #                              "disabled"); null when unset, which Codex reads as "cached", web on;
+#                              and `plugins`, the plugin entries as the config reads them, which say
+#                              whether a server given back is a plugin's (see `plugins` below);
 #   for each --give-back server, `codex … mcp get SERVER --json` (enabled_tools) and the plain
 #                              `mcp get SERVER` (default_tools_approval_mode).
 # Expected: every listed server disabled except the --give-back servers, which are listed, enabled,
-# with enabled_tools exactly the tools named and default_tools_approval_mode auto; apps and
-# image_generation false; web_search "disabled", or with --give-back web any other value.
+# with enabled_tools exactly the tools named and default_tools_approval_mode auto; each feature above
+# false, except `plugins`, which reads true exactly when a server given back comes from a plugin (a
+# plugin's servers don't load while plugins is off, so that give-back keeps plugins on); web_search
+# "disabled", or with --give-back web any other value. A feature name the worker's arguments set that
+# this version doesn't list is a mismatch too, so a renamed or dropped feature is noticed.
 # Not covered: a tool's own approval_mode (no command shows it: with --give-back the JSON lists the
 # approval_mode lines of the user's config and the checkout's .codex/config.toml, for the user);
 # Codex's own codex_tui server, which no setting removes (herdr-worker.sh mcp shows what a mode B
 # worker really has connected); and managed requirements (requirements.toml, MDM), which can refuse
 # web_search "disabled" at a turn.
 # Prints one JSON object: {ok, route, cwd, codex, list|args_file, give_back, give_back_web,
-# checks: {as_is, trusted}, mismatches, approval_lines?}. Exit 0 as expected; 1 a mismatch
-# (mismatches says which); 2 a codex command failed or printed what can't be read (error); 64 usage.
+# checks: {as_is, trusted}, mismatches, approval_lines?}; a pass's facts are {servers, features,
+# features_named_unlisted, features_named_removed, plugin_back, web_search, give_back}. Exit 0 as
+# expected; 1 a mismatch (mismatches says which); 2 a codex command failed or printed what can't be
+# read (error); 64 usage.
 set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -73,6 +85,11 @@ CWD=$(cd "$CWD" && pwd -P)
 GIVE_JSON=$(printf '%s\n' "${GIVE[@]}" | jq -R 'select(. != "") | split("=") | {(.[0]): (.[1] | split(",") | sort)}' | jq -cs 'add // {}')
 
 MISMATCH=()
+# The features a worker's arguments turn off: each must be listed by this Codex version, not marked
+# removed, and read false. `plugins` may read true, but only for a give-back of a plugin's server.
+FEATURES=(apps image_generation plugins remote_plugin plugin_sharing browser_use browser_use_external
+  computer_use in_app_browser skill_search skill_mcp_dependency_install)
+FEATURE_LABELS='{"apps": "apps (the connectors)", "image_generation": "image generation"}'
 CONFIG=()   # the pairs from a mode B args file
 if [ -n "$ARGS_FILE" ]; then
   mapfile -t lines < <(sed -e 's/\r$//' -e '/^$/d' "$ARGS_FILE")
@@ -107,9 +124,32 @@ else
 fi
 run() { (cd "$CWD" && "${CMD[@]}" "$@"); }
 
+# ARG_FEATURES: the feature names the worker's arguments set, as `features.<name>=…` values or
+# `--enable`/`--disable <name>`. A name this Codex version no longer lists sets nothing, so it is a
+# mismatch: a rename or a drop in Codex must not pass unnoticed.
+ARG_FEATURES=()
+if [ -n "$ARGS_FILE" ]; then
+  i=0
+  while [ "$i" -lt "${#CONFIG[@]}" ]; do
+    case ${CONFIG[i]} in
+      --enable|--disable) ARG_FEATURES+=("${CONFIG[i + 1]}") ;;
+      -c|--config) [[ ${CONFIG[i + 1]} =~ ^features\.([A-Za-z0-9_]+)[[:space:]]*= ]] && ARG_FEATURES+=("${BASH_REMATCH[1]}") ;;
+    esac
+    i=$((i + 2))
+  done
+else
+  ARG_LIST=${LIST:-$HERE/codex-no-mcp/no-mcp.args}
+  [ -r "$ARG_LIST" ] || error "cannot read the list $ARG_LIST"
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ ${line%$'\r'} =~ ^features\.([A-Za-z0-9_]+)[[:space:]]*= ]] && ARG_FEATURES+=("${BASH_REMATCH[1]}")
+  done < "$ARG_LIST"
+fi
+[ "${#ARG_FEATURES[@]}" -eq 0 ] || mapfile -t ARG_FEATURES < <(printf '%s\n' "${ARG_FEATURES[@]}" | sort -u)
+
 # config_read ARGS...: `config/read` from `codex ARGS... app-server`, started from DIR for that request
-# alone; prints {"web_search": VALUE}. Exits 1 with a message when no answer comes within 10 s. The app
-# server ends when its input closes; one that hasn't 3 s later is stopped, its process group with it.
+# alone; prints {"web_search": VALUE, "plugins": the plugin entries}. Exits 1 with a message when no
+# answer comes within 10 s. The app server ends when its input closes; one that hasn't 3 s later is
+# stopped, its process group with it.
 config_read() {
   python3 -I - "$CWD" "$ERR" "${CMD[@]}" "$@" app-server <<'PY'
 import json, os, select, signal, subprocess, sys, time
@@ -152,7 +192,7 @@ finally:
 config = ((answer or {}).get('result') or {}).get('config')
 if not isinstance(config, dict):
     print('no config/read answer: ' + json.dumps(answer)[:500]); sys.exit(1)
-print(json.dumps({'web_search': config.get('web_search')}))
+print(json.dumps({'web_search': config.get('web_search'), 'plugins': config.get('plugins')}))
 PY
 }
 
@@ -160,19 +200,36 @@ TRUST="projects={$(jq -cn --arg p "$CWD" '$p')={trust_level=\"trusted\"}}"
 ERR=$(mktemp)
 trap 'rm -f "$ERR"' EXIT
 check() {  # check as_is|trusted: one pass's facts as JSON
-  local extra=() list feats apps image web get plain server js
+  local extra=() list feats table features unlisted removed web plugin_back get plain server js n
   [ "$1" = as_is ] || extra=(-c "$TRUST")
   list=$(run "${extra[@]}" mcp list --json 2> "$ERR") || error "codex mcp list failed ($1)" "$(cat "$ERR")"
   jq -e 'type == "array" and all(.[]; (.name | type) == "string" and (.enabled | type) == "boolean")' <<< "$list" > /dev/null ||
     error "codex mcp list printed what this check can't read ($1)" "$list"
   feats=$(run "${extra[@]}" features list 2> "$ERR") || error "codex features list failed ($1)" "$(cat "$ERR")"
-  apps=$(awk '$1 == "apps" { print $NF }' <<< "$feats")
-  [[ $apps =~ ^(true|false)$ ]] || error "codex features list shows no state for apps ($1)" "$feats"
-  image=$(awk '$1 == "image_generation" { print $NF }' <<< "$feats")
-  [[ $image =~ ^(true|false)$ ]] || error "codex features list shows no state for image_generation ($1)" "$feats"
+  # name, stage and state of every row; a row that ends in neither true nor false is skipped.
+  table=$(awk '{ state = $NF; stage = ""
+                 for (i = 2; i < NF; i++) stage = stage (i > 2 ? " " : "") $i
+                 if (state == "true" || state == "false") print $1 "\t" stage "\t" state }' <<< "$feats" |
+    jq -Rn '[inputs | split("\t") | {(.[0]): {stage: .[1], state: (.[2] == "true")}}] | add // {}') ||
+    error "codex features list printed what this check can't read ($1)" "$feats"
+  jq -e 'length > 0' <<< "$table" > /dev/null || error "codex features list printed what this check can't read ($1)" "$feats"
+  features=$(jq -cn --argjson f "$table" --argjson names "$(printf '%s\n' "${FEATURES[@]}" | jq -Rn '[inputs]')" \
+    'reduce $names[] as $n ({}; if $f[$n] then . + {($n): $f[$n]} else . end)')
+  # the feature names the worker's arguments set that this version doesn't list, or marks removed
+  unlisted='[]' removed='[]'
+  for n in "${ARG_FEATURES[@]}"; do
+    case $(jq -r --arg n "$n" 'if has($n) then .[$n].stage else "unlisted" end' <<< "$table") in
+      unlisted) unlisted=$(jq -c --arg n "$n" '. + [$n]' <<< "$unlisted") ;;
+      removed) removed=$(jq -c --arg n "$n" '. + [$n]' <<< "$removed") ;;
+    esac
+  done
   web=$(config_read "${extra[@]}") || error "codex app-server config/read failed ($1)" "$web $(cat "$ERR")"
   jq -e '.web_search | . == null or IN("disabled", "cached", "indexed", "live")' <<< "$web" > /dev/null ||
     error "codex app-server config/read printed what this check can't read ($1)" "$web"
+  # a server the config gives back through a plugin: its settings sit in that plugin's `mcp_servers`
+  plugin_back=$(jq -c --argjson g "$GIVE_JSON" '(.plugins // {}) | [to_entries[] | (.value.mcp_servers // {}) |
+    to_entries[] | select(.value != {enabled: false}) | .key] | unique | map(select(. as $s | $g | has($s)))' <<< "$web") ||
+    error "codex app-server config/read printed plugins this check can't read ($1)" "$web"
   get='{}'
   for server in $(jq -r 'keys[]' <<< "$GIVE_JSON"); do
     jq -e --arg s "$server" 'any(.[]; .name == $s)' <<< "$list" > /dev/null || continue
@@ -182,20 +239,37 @@ check() {  # check as_is|trusted: one pass's facts as JSON
       default_tools_approval_mode: ($p | [capture("(?m)^\\s*default_tools_approval_mode: (?<m>\\S+)").m] | first)}}' <<< "$get") ||
       error "codex mcp get $server printed what this check can't read ($1)" "$js"
   done
-  jq -cn --argjson l "$list" --argjson a "$apps" --argjson i "$image" --argjson w "$web" --argjson g "$get" \
-    '{servers: ($l | map({(.name): .enabled}) | add // {}), apps: $a, image_generation: $i,
-      web_search: $w.web_search, give_back: $g}'
+  jq -cn --argjson l "$list" --argjson f "$features" --argjson u "$unlisted" --argjson r "$removed" \
+    --argjson pb "$plugin_back" --argjson w "$web" --argjson g "$get" \
+    '{servers: ($l | map({(.name): .enabled}) | add // {}), features: $f, features_named_unlisted: $u,
+      features_named_removed: $r, plugin_back: $pb, web_search: $w.web_search, give_back: $g}'
 }
 AS_IS=$(check as_is) || { r=$?; out "$AS_IS" "$r"; }
 TRUSTED=$(check trusted) || { r=$?; out "$TRUSTED" "$r"; }
 
 compare() {  # compare PASS FACTS: one line per difference from the expected
-  jq -r --arg pass "$1" --argjson want "$GIVE_JSON" --argjson web_back "$WEB_BACK" '. as $f |
+  jq -r --arg pass "$1" --argjson want "$GIVE_JSON" --argjson web_back "$WEB_BACK" \
+    --argjson names "$(printf '%s\n' "${FEATURES[@]}" | jq -Rn '[inputs]')" --argjson labels "$FEATURE_LABELS" '. as $f |
     ($f.servers | to_entries[] | .key as $k | select(.value != ($want | has($k))) |
       if .value then "\($pass): \($k) is enabled" else "\($pass): \($k), given back, is not enabled" end),
     ($want | keys[] as $k | select(($f.servers | has($k)) | not) | "\($pass): \($k), given back, is not listed"),
-    (if $f.apps then "\($pass): apps (the connectors) is on" else empty end),
-    (if $f.image_generation then "\($pass): image generation is on (features.image_generation=false is missing or overridden)" else empty end),
+    ($f.features_named_unlisted[]? | "\($pass): features.\(.): the arguments set it and this Codex version does not list it (renamed or dropped)"),
+    ($f.features_named_removed[]? | "\($pass): features.\(.): the arguments set it and this Codex version marks it removed, so it turns nothing off"),
+    ($names[] as $n | ($f.features[$n] // null) as $row |
+      if $row == null then
+        "\($pass): features.\($n): this Codex version does not list it (renamed or dropped)"
+      elif $row.stage == "removed" then
+        "\($pass): features.\($n): this Codex version marks it removed, so features.\($n)=false turns nothing off"
+      elif $n == "plugins" then
+        if ($f.plugin_back | length) > 0 then
+          (if $row.state then empty
+           else "\($pass): \($f.plugin_back | join(", ")): a server from a plugin, given back, needs features.plugins=true (plugins off loads no server a plugin delivers)" end)
+        elif $row.state then
+          "\($pass): plugins is on (features.plugins=true is only for giving back a server a plugin delivers)"
+        else empty end
+      elif $row.state then
+        "\($pass): \($labels[$n] // $n) is on (features.\($n)=false is missing or overridden)"
+      else empty end),
     (if $web_back then
        (if $f.web_search == "disabled" then "\($pass): the web, given back, is disabled (web_search=\"disabled\" is still in the arguments)" else empty end)
      elif $f.web_search != "disabled" then
