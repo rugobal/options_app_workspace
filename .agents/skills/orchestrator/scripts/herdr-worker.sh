@@ -69,7 +69,9 @@
 #   (error.detail: reason, sent, screen) when no such list sits above an empty composer in time (default
 #   15000 ms); reasons: list_on_screen, no_heading, more_than_one_list, no_composer_below, no_echo,
 #   not_new, unexpected_row, list_not_last, no_servers, list_cut, tools_unreadable, no_codex_tui,
-#   composer_not_empty, time_up. A dialog after the list is 5, a turn opened by it 1 mcp_turn_opened;
+#   duplicate_server, composer_not_empty, time_up. A name must identify one server, because `connected`
+#   is keyed by it: two rows sharing a name fail the list, whatever their status or environment.
+#   A dialog after the list is 5, a turn opened by it 1 mcp_turn_opened;
 #   64 agent_working or turn_open while a turn runs; 4 gone, with no change recorded.
 # keys sends keys (Herdr key names) to a mode B agent's pane, to answer a dialog.
 # wait blocks until the worker's outcome is known. Mode A: the exit record. Mode B: the delivered turn
@@ -1299,7 +1301,11 @@ def step($row):
             else {tool_names: (.rows.Tools | split(",") | map(sub("^\\s+"; "") | sub("\\s+$"; "")))} end
           + {count_ok: (if .rows.Tools == "(none)" then .tools == 0
                         else (.rows.Tools | split(",") | length) == .tools end)}] as $sv
-        | if any($sv[]; (.count_ok | not) or (.tool_names // [] | any(test("^[^\\s,]+$") | not)))
+        # A name must identify one server: `connected` is keyed by it, so two rows with one name would
+        # collapse into one entry and lose the tools of the earlier row. Any duplicate fails the list,
+        # whatever the status or the environment note, before anything else about the rows is judged.
+        | if ([$sv[].name] | length) != ([$sv[].name] | unique | length) then {reason: "duplicate_server"}
+          elif any($sv[]; (.count_ok | not) or (.tool_names // [] | any(test("^[^\\s,]+$") | not)))
           then {reason: "tools_unreadable"}
           elif ([$sv[] | select(.name == "codex_tui" and .status == "connected")] == []) then {reason: "no_codex_tui"}
           else {servers: [$sv[] | del(.count_ok)],
