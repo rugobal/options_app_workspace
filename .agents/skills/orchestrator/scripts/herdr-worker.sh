@@ -56,8 +56,9 @@
 # mcp (mode B Codex) sends `/mcp verbose` under prompt's last-moment check (only Codex's empty composer
 #   takes it; a dialog is 5, anything else 3, nothing sent), then reads the list Codex prints into its
 #   transcript: no turn opens, the composer is empty again, and the lifecycle state never changes. 0:
-#   {id, agent_name, state, servers: [{name, status, tools, tool_names}], connected: {NAME: [TOOL...]}},
-#   tool_names for connected servers only. It is what the agent really has connected, Codex's own
+#   {id, agent_name, state, servers: [{name, environment, status, tools, tool_names}], connected:
+#   {NAME: [TOOL...]}}, tool_names for connected servers only, environment the word Codex prints in a
+#   server row's note (null when the row has none). It is what the agent really has connected, Codex's own
 #   codex_tui included (a 0 needs it connected), and the connectors' servers when they are on; it is the
 #   second look after codex-mcp-preflight.sh, which reads the configuration before the start. Freshness:
 #   nothing is sent while a list is on screen (1, reason list_on_screen, sent false), and the answer is
@@ -1238,7 +1239,8 @@ cmd_prompt() {
 # Codex's `/mcp verbose` (codex-rs/tui/src/history_cell/mcp.rs, new_mcp_tools_output_from_statuses)
 # prints one cell into the transcript, opens no turn and leaves the composer empty. The cell is the echo
 # "/mcp", a blank row, "🔌  MCP Tools", a blank row, then per server, sorted by name: "  • NAME: STATUS
-# (N tools)", the detail rows "    • Auth: …", "    • Tools: …", "    • Resources: …", "    • Resource
+# (N tools)" (Codex 0.171.0 adds " (environment WORD)" after NAME when it gives the server an
+# environment), the detail rows "    • Auth: …", "    • Tools: …", "    • Resources: …", "    • Resource
 # templates: …" in that order (a long value wraps onto rows of its own at column 0), and a blank row.
 # Below the cell only Codex's input area follows: blank rows, a right-aligned notice (5 or more leading
 # spaces; a list row has at most 4), then the composer "›". The pane holds only the visible screen, so
@@ -1253,7 +1255,10 @@ def heads: [to_entries[] | select(.value | test("^🔌\\s+MCP Tools$")) | .key];
 def pane_row: . == "" or test("^ {5}");
 def composer: [to_entries[] | select(.value | startswith("›")) | .key] | last;
 def anchor($n): [.[:$n][] | select(pane_row | not)] | last;
-def server_row: [capture("^  • (?<name>[A-Za-z0-9_-]+): (?<status>[a-z]+( [a-z]+)?) \\((?<tools>[0-9]+) tools?\\)$")];
+# A server row: NAME, an optional note of exactly " (environment WORD)" (one word of letters, digits,
+# _ or -), the colon, the status, the tool count. Any other text there, two notes or a note without
+# its word fails the row as unexpected_row: this parser is a safety check.
+def server_row: [capture("^  • (?<name>[A-Za-z0-9_-]+)(?: \\(environment (?<environment>[A-Za-z0-9_-]+)\\))?: (?<status>[a-z]+( [a-z]+)?) \\((?<tools>[0-9]+) tools?\\)$")];
 def detail_row: [capture("^    • (?<k>Auth|Tools|Resources|Resource templates): (?<v>.*)$")];
 def step($row):
   if .reason != null then .
@@ -1288,7 +1293,7 @@ def step($row):
       elif .groups == [] then {reason: "no_servers"}
       elif .at == "group" and .next < 4 then {reason: "list_cut"}
       else
-        [.groups[] | {name, status, tools}
+        [.groups[] | {name, environment, status, tools}
           + if .status != "connected" then {}
             elif .rows.Tools == "(none)" then {tool_names: []}
             else {tool_names: (.rows.Tools | split(",") | map(sub("^\\s+"; "") | sub("\\s+$"; "")))} end
